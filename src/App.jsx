@@ -416,7 +416,7 @@ function App() {
   // Google Maps laden
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBUsUSRoOm470zE64np1xLay1WxAQTcF3g&libraries=geometry,places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCKWHwO2NASXbuP2pF_mNWxFapWXC15W0Q&libraries=geometry,places`;
     script.async = true;
     script.defer = true;
     script.onload = () => setMapLoaded(true);

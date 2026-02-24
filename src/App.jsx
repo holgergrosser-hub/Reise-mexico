@@ -10,6 +10,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('karte');
   const [editedDocument, setEditedDocument] = useState(reiseplanData.paragraphs);
   const [isEditingDoc, setIsEditingDoc] = useState(false);
+  const [filteredDay, setFilteredDay] = useState(null); // Für Kartenfilter
   
   // Cloud-Sync States
   const [cloudAPI] = useState(() => new CloudAPI());
@@ -382,7 +383,7 @@ function App() {
   // Google Maps laden
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBUsUSRoOm470zE64np1xLay1WxAQTcF3g&libraries=geometry`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dqqjZ1pGEFVjko&libraries=geometry`;
     script.async = true;
     script.defer = true;
     script.onload = () => setMapLoaded(true);
@@ -391,14 +392,16 @@ function App() {
 
   // Karte initialisieren
   useEffect(() => {
-    if (!mapLoaded) return;
+    if (!mapLoaded || activeTab !== 'karte') return;
 
-    const mapDiv = document.getElementById('map');
-    if (!mapDiv) return;
+    // Kleines Timeout damit das DOM vollständig gerendert ist
+    const timeout = setTimeout(() => {
+      const mapDiv = document.getElementById('map');
+      if (!mapDiv) return;
 
-    const map = new window.google.maps.Map(mapDiv, {
+      const map = new window.google.maps.Map(mapDiv, {
       center: { lat: 19.4326, lng: -99.1332 }, // Mexiko-Stadt
-      zoom: 6,
+      zoom: filteredDay ? 12 : 6, // Näher zoomen wenn Tag gefiltert
       mapTypeControl: true,
       mapTypeControlOptions: {
         style: window.google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
@@ -412,8 +415,13 @@ function App() {
     const markers = [];
     const infoWindows = [];
 
+    // Nur ausgewählten Tag zeigen wenn filteredDay gesetzt ist
+    const tagsToShow = filteredDay 
+      ? reiseDaten.filter(tag => tag.tag === filteredDay)
+      : reiseDaten;
+
     // Marker für alle Tage erstellen
-    reiseDaten.forEach((tag, tagIndex) => {
+    tagsToShow.forEach((tag, tagIndex) => {
       tag.orte.forEach((ort, ortIndex) => {
         const position = { lat: ort.lat, lng: ort.lng };
         
@@ -425,12 +433,12 @@ function App() {
         const marker = new window.google.maps.Marker({
           position: position,
           map: map,
-          title: ort.name,
+          title: `${ort.zeit} - ${ort.name}`,
           label: {
-            text: `${tag.tag}`,
+            text: filteredDay ? ort.zeit : `${tag.tag}`, // Uhrzeit bei Filter, sonst Tag-Nummer
             color: 'white',
             fontWeight: 'bold',
-            fontSize: '12px'
+            fontSize: filteredDay ? '10px' : '12px'
           },
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
@@ -438,20 +446,30 @@ function App() {
             fillOpacity: 0.9,
             strokeColor: 'white',
             strokeWeight: 2,
-            scale: 15,
+            scale: filteredDay ? 18 : 15, // Größer bei Filter
           }
         });
 
         const infoContent = `
-          <div style="padding: 10px; min-width: 200px;">
+          <div style="padding: 10px; min-width: 250px; max-width: 350px;">
+            <div style="margin-bottom: 10px;">
+              <img src="https://picsum.photos/seed/${encodeURIComponent(ort.name)}/350/200" 
+                   style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
+                   alt="${ort.name}">
+            </div>
             <h3 style="margin: 0 0 8px 0; color: ${markerColor}; font-size: 16px;">
-              Tag ${tag.tag}: ${ort.name}
+              🕐 ${ort.zeit} - ${ort.name}
             </h3>
-            <p style="margin: 4px 0; font-size: 13px;"><strong>📅 ${tag.datum}</strong> - ${tag.title}</p>
-            <p style="margin: 4px 0; font-size: 13px;">🕐 ${ort.zeit} Uhr (${ort.dauer})</p>
+            <p style="margin: 4px 0; font-size: 13px;"><strong>📅 Tag ${tag.tag} - ${tag.datum}</strong> - ${tag.title}</p>
+            <p style="margin: 4px 0; font-size: 13px;">⏱️ ${ort.dauer}</p>
             ${ort.entfernung ? `<p style="margin: 4px 0; font-size: 13px;">🚗 ${ort.entfernung}</p>` : ''}
             <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">${tag.beschreibung}</p>
             ${tag.hinweis ? `<p style="margin: 4px 0; font-size: 12px; color: #E63946; font-weight: bold;">⚠️ ${tag.hinweis}</p>` : ''}
+            <button onclick="window.goToNotes(${tag.tag})" 
+                    style="margin-top: 10px; background: #667eea; color: white; border: none; 
+                           padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 13px;">
+              📝 Zu den Notizen von Tag ${tag.tag}
+            </button>
           </div>
         `;
 
@@ -506,8 +524,25 @@ function App() {
     });
 
     map.fitBounds(bounds);
+    }, 100); // 100ms Verzögerung
 
-  }, [mapLoaded]);
+    return () => clearTimeout(timeout);
+  }, [mapLoaded, activeTab, filteredDay]); // filteredDay hinzugefügt
+
+  // Globale Funktion für "Zu den Notizen" Button
+  useEffect(() => {
+    window.goToNotes = (day) => {
+      setActiveTab('notizen');
+      setTimeout(() => {
+        const element = document.getElementById(`notiz-tag-${day}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          element.classList.add('highlight');
+          setTimeout(() => element.classList.remove('highlight'), 2000);
+        }
+      }, 100);
+    };
+  }, []);
 
   return (
     <div className="app">
@@ -581,6 +616,14 @@ function App() {
         <div className="container">
           <div className="map-container">
             <div id="map" className="map"></div>
+            {filteredDay && (
+              <div className="filter-indicator">
+                🔍 Zeige nur Tag {filteredDay}
+                <button onClick={() => setFilteredDay(null)} className="clear-filter">
+                  ✕ Alle zeigen
+                </button>
+              </div>
+            )}
             <div className="legend">
               <h4>Legende:</h4>
               <div className="legend-item">
@@ -604,11 +647,29 @@ function App() {
               <div 
                 key={tag.tag} 
                 className={`day-card ${selectedDay === tag.tag ? 'selected' : ''}`}
-                onClick={() => setSelectedDay(selectedDay === tag.tag ? null : tag.tag)}
               >
                 <div className="day-header">
                   <h3>Tag {tag.tag} - {tag.datum}</h3>
                   <h4>{tag.title}</h4>
+                  <div className="day-actions">
+                    <button 
+                      className="filter-btn"
+                      onClick={() => {
+                        setFilteredDay(filteredDay === tag.tag ? null : tag.tag);
+                        setActiveTab('karte');
+                      }}
+                      title="Nur diesen Tag auf der Karte zeigen"
+                    >
+                      {filteredDay === tag.tag ? '🗺️ Alle zeigen' : '🔍 Nur dieser Tag'}
+                    </button>
+                    <button 
+                      className="notes-btn"
+                      onClick={() => window.goToNotes(tag.tag)}
+                      title="Zu den Notizen springen"
+                    >
+                      📝 Notizen
+                    </button>
+                  </div>
                 </div>
                 
                 {tag.hinweis && (
@@ -691,7 +752,7 @@ function App() {
           
           <div className="notizen-liste">
             {reiseDaten.map((tag) => (
-              <div key={tag.tag} className="notiz-card">
+              <div key={tag.tag} className="notiz-card" id={`notiz-tag-${tag.tag}`}>
                 <div className="notiz-header">
                   <h3>Tag {tag.tag} - {tag.datum}</h3>
                   <h4>{tag.title}</h4>

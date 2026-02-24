@@ -386,6 +386,17 @@ body {
   margin-bottom: 10px;
 }
 
+.day-summary {
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #667eea;
+  font-weight: 600;
+  margin: 8px 0;
+  border-left: 3px solid #667eea;
+}
+
 .day-actions {
   display: flex;
   gap: 8px;

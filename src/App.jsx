@@ -207,13 +207,17 @@ function App() {
     {
       tag: 1,
       datum: "09.04",
-      title: "Ankommen Roma/Condesa",
+      title: "Roma/Condesa",
       orte: [
-        { name: "Parque de los Venados", lat: 19.3723603, lng: -99.1558202, zeit: "10:00", dauer: "3h" },
-        { name: "Roma Norte", lat: 19.4195256, lng: -99.162549, zeit: "14:00", dauer: "4h", entfernung: "6 km / 15 Min" },
-        { name: "Parque México Condesa", lat: 19.4122631, lng: -99.1695776, zeit: "19:00", dauer: "3h", entfernung: "1 km / 5 Min" }
+        { name: "Navarte (Start)", lat: 19.3987, lng: -99.1547, zeit: "10:00", dauer: "Start", typ: "base" },
+        { name: "Parque de los Venados", lat: 19.3723603, lng: -99.1558202, zeit: "10:00", dauer: "3h", entfernung: "2.9 km / 10 Min" },
+        { name: "Roma Norte", lat: 19.4195256, lng: -99.162549, zeit: "14:00", dauer: "4h", entfernung: "5.3 km / 15 Min" },
+        { name: "Parque México Condesa", lat: 19.4122631, lng: -99.1695776, zeit: "19:00", dauer: "3h", entfernung: "1 km / 5 Min" },
+        { name: "Navarte (Rückkehr)", lat: 19.3987, lng: -99.1547, zeit: "22:00", dauer: "Ende", entfernung: "2.1 km / 8 Min", typ: "base" }
       ],
-      beschreibung: "Street Art an der Álvaro Obregón Avenue, Mercado de Medellín, Art-Déco-Architektur"
+      beschreibung: "Street Art an der Álvaro Obregón Avenue, Mercado de Medellín, Art-Déco-Architektur",
+      gesamtEntfernung: "11.3 km",
+      gesamtFahrtzeit: "38 Min"
     },
     {
       tag: 2,
@@ -412,7 +416,7 @@ function App() {
   // Google Maps laden
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBUsUSRoOm470zE64np1xLay1WxAQTcF3g&libraries=geometry,places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dqqjZ1pGEFVjko&libraries=geometry,places`;
     script.async = true;
     script.defer = true;
     script.onload = () => setMapLoaded(true);
@@ -486,14 +490,43 @@ function App() {
           fields: ['photos', 'formatted_address', 'name', 'rating', 'opening_hours']
         };
 
-        let imageUrl = `https://picsum.photos/seed/${encodeURIComponent(ort.name)}/350/200`;
+        // Bessere Bilder: Unsplash mit Mexiko-spezifischen Keywords
+        const searchTerm = ort.name.replace(/\s+/g, '+');
+        let imageUrl = `https://source.unsplash.com/400x250/?${searchTerm},mexico,landmark`;
         
-        // Versuche echtes Foto zu laden
+        // Versuche echtes Foto von Google Places zu laden
         placesService.findPlaceFromQuery(request, (results, status) => {
           if (status === window.google.maps.places.PlacesServiceStatus.OK && results[0]?.photos) {
             imageUrl = results[0].photos[0].getUrl({ maxWidth: 400, maxHeight: 250 });
           }
         });
+
+        // Entfernungslinie zum vorherigen Ort zeichnen
+        if (ortIndex > 0) {
+          const prevOrt = tag.orte[ortIndex - 1];
+          const line = new window.google.maps.Polyline({
+            path: [
+              { lat: prevOrt.lat, lng: prevOrt.lng },
+              { lat: ort.lat, lng: ort.lng }
+            ],
+            geodesic: true,
+            strokeColor: markerColor,
+            strokeOpacity: 0.8,
+            strokeWeight: 3,
+            map: map,
+            icons: [{
+              icon: {
+                path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                scale: 3,
+                fillColor: markerColor,
+                fillOpacity: 1,
+                strokeColor: 'white',
+                strokeWeight: 1
+              },
+              offset: '50%'
+            }]
+          });
+        }
 
         const infoContent = `
           <div style="padding: 10px; min-width: 250px; max-width: 350px;">
@@ -501,14 +534,15 @@ function App() {
               <img src="${imageUrl}" 
                    style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
                    alt="${ort.name}"
-                   onerror="this.src='https://picsum.photos/seed/${encodeURIComponent(ort.name)}/350/200'">
+                   onerror="this.src='https://source.unsplash.com/400x250/?mexico+city,travel'">
             </div>
             <h3 style="margin: 0 0 8px 0; color: ${markerColor}; font-size: 16px;">
-              🕐 ${ort.zeit} - ${ort.name}
+              ${ort.typ === 'base' ? '🏠' : '🕐'} ${ort.zeit} - ${ort.name}
             </h3>
             <p style="margin: 4px 0; font-size: 13px;"><strong>📅 Tag ${tag.tag} - ${tag.datum}</strong> - ${tag.title}</p>
-            <p style="margin: 4px 0; font-size: 13px;">⏱️ ${ort.dauer}</p>
-            ${ort.entfernung ? `<p style="margin: 4px 0; font-size: 13px;">🚗 ${ort.entfernung}</p>` : ''}
+            <p style="margin: 4px 0; font-size: 13px;">⏱️ Aufenthalt: ${ort.dauer}</p>
+            ${ort.entfernung ? `<p style="margin: 4px 0; font-size: 14px; color: #E63946; font-weight: bold;">🚗 ${ort.entfernung} vom vorherigen Ort</p>` : ''}
+            ${tag.gesamtEntfernung ? `<p style="margin: 8px 0 4px 0; font-size: 12px; background: #f0f0f0; padding: 6px; border-radius: 4px;"><strong>📊 Gesamt heute:</strong> ${tag.gesamtEntfernung} • ${tag.gesamtFahrtzeit} Fahrtzeit</p>` : ''}
             <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">${tag.beschreibung}</p>
             ${tag.hinweis ? `<p style="margin: 4px 0; font-size: 12px; color: #E63946; font-weight: bold;">⚠️ ${tag.hinweis}</p>` : ''}
             <button onclick="window.goToNotes(${tag.tag})" 
@@ -729,6 +763,11 @@ function App() {
                 <div className="day-header">
                   <h3>Tag {tag.tag} - {tag.datum}</h3>
                   <h4>{tag.title}</h4>
+                  {tag.gesamtEntfernung && (
+                    <div className="day-summary">
+                      📊 Gesamt: {tag.gesamtEntfernung} • ⏱️ {tag.gesamtFahrtzeit}
+                    </div>
+                  )}
                   <div className="day-actions">
                     <button 
                       className="filter-btn"

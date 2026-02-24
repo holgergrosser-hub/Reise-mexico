@@ -51,7 +51,7 @@ function App() {
   }, [syncMode]);
 
   // Lokale Daten laden
-  const loadLocalData() => {
+  const loadLocalData = () => {
     const savedNotes = localStorage.getItem('mexiko-reise-notizen');
     if (savedNotes) setNotes(JSON.parse(savedNotes));
     

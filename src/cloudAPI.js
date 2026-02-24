@@ -4,7 +4,7 @@
 // ============================================
 
 // WICHTIG: Diese URL nach Deployment des Google Apps Scripts eintragen!
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwmWOpzdfRiLjqa5rcgeBHPySBYQo_wyhPSdhqC_r_mgb0WfNxwM3-zbYOiFDjWXQaWfA/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/IHRE_DEPLOYMENT_ID/exec';
 
 class CloudAPI {
   constructor() {

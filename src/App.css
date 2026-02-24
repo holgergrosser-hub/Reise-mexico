@@ -39,6 +39,44 @@ body {
   gap: 20px;
 }
 
+.header-widgets {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Wetter Widget */
+.weather-widget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  padding: 10px 15px;
+  border-radius: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.weather-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.weather-temp {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: white;
+  line-height: 1;
+}
+
+.weather-desc {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  text-transform: capitalize;
+}
+
 .header h1 {
   font-size: 2.5rem;
   margin-bottom: 10px;

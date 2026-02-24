@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import reiseplanData from './reiseplan-text.json';
 import CloudAPI from './cloudAPI';
+import WeatherAPI from './weatherAPI';
 
 function App() {
   const [selectedDay, setSelectedDay] = useState(null);
@@ -20,6 +21,12 @@ function App() {
   const [syncMode, setSyncMode] = useState(() => {
     return localStorage.getItem('sync-mode') || 'cloud'; // 'cloud' oder 'local'
   });
+
+  // Wetter States
+  const [weatherAPI] = useState(() => new WeatherAPI());
+  const [currentWeather, setCurrentWeather] = useState(null);
+  const [weatherForecast, setWeatherForecast] = useState([]);
+  const [weatherLoading, setWeatherLoading] = useState(false);
 
   // Initialer Sync beim Start
   useEffect(() => {
@@ -186,6 +193,17 @@ function App() {
 
   // Reisedaten mit allen Orten und Fahrzeiten
   const reiseDaten = [
+    {
+      tag: 0,
+      datum: "08.04",
+      title: "Ankunft Navarte",
+      orte: [
+        { name: "Navarte, Mexico City", lat: 19.3987, lng: -99.1547, zeit: "18:00", dauer: "Übernachtung", entfernung: "Start der Reise" }
+        // HINWEIS: Genaue Adresse wird noch ergänzt
+      ],
+      beschreibung: "Ankunft am Flughafen, Transfer nach Navarte, Übernachtung",
+      hinweis: "ANREISETAG"
+    },
     {
       tag: 1,
       datum: "09.04",
@@ -377,13 +395,24 @@ function App() {
       ],
       beschreibung: "Flug nach Mexiko-Stadt, Hotel am Flughafen, Abflug nach Frankfurt am 01.05",
       hinweis: "ABREISE"
+    },
+    {
+      tag: 23,
+      datum: "01.05",
+      title: "Rückkehr Navarte / Abflug",
+      orte: [
+        { name: "Navarte, Mexico City", lat: 19.3987, lng: -99.1547, zeit: "06:00", dauer: "Checkout", entfernung: "Ende der Reise" }
+        // HINWEIS: Genaue Adresse wird noch ergänzt
+      ],
+      beschreibung: "Letzte Nacht in Navarte, früher Checkout für Rückflug nach Frankfurt",
+      hinweis: "ABREISETAG"
     }
   ];
 
   // Google Maps laden
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBUsUSRoOm470zE64np1xLay1WxAQTcF3g&libraries=geometry`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dqqjZ1pGEFVjko&libraries=geometry,places`;
     script.async = true;
     script.defer = true;
     script.onload = () => setMapLoaded(true);
@@ -450,12 +479,29 @@ function App() {
           }
         });
 
+        // Google Places Service für echte Fotos
+        const placesService = new window.google.maps.places.PlacesService(map);
+        const request = {
+          query: ort.name + ', Mexico City',
+          fields: ['photos', 'formatted_address', 'name', 'rating', 'opening_hours']
+        };
+
+        let imageUrl = `https://picsum.photos/seed/${encodeURIComponent(ort.name)}/350/200`;
+        
+        // Versuche echtes Foto zu laden
+        placesService.findPlaceFromQuery(request, (results, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && results[0]?.photos) {
+            imageUrl = results[0].photos[0].getUrl({ maxWidth: 400, maxHeight: 250 });
+          }
+        });
+
         const infoContent = `
           <div style="padding: 10px; min-width: 250px; max-width: 350px;">
             <div style="margin-bottom: 10px;">
-              <img src="https://picsum.photos/seed/${encodeURIComponent(ort.name)}/350/200" 
+              <img src="${imageUrl}" 
                    style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
-                   alt="${ort.name}">
+                   alt="${ort.name}"
+                   onerror="this.src='https://picsum.photos/seed/${encodeURIComponent(ort.name)}/350/200'">
             </div>
             <h3 style="margin: 0 0 8px 0; color: ${markerColor}; font-size: 16px;">
               🕐 ${ort.zeit} - ${ort.name}
@@ -544,6 +590,20 @@ function App() {
     };
   }, []);
 
+  // Wetter laden beim Start
+  useEffect(() => {
+    const loadWeather = async () => {
+      setWeatherLoading(true);
+      const current = await weatherAPI.getCurrentWeather('Mexico City');
+      const forecast = await weatherAPI.getForecast('Mexico City');
+      setCurrentWeather(current);
+      setWeatherForecast(forecast);
+      setWeatherLoading(false);
+    };
+    
+    loadWeather();
+  }, []);
+
   return (
     <div className="app">
       <header className="header">
@@ -553,34 +613,52 @@ function App() {
             <p>3 Wochen von Mexiko-Stadt bis zur Karibikküste</p>
           </div>
           
-          <div className="sync-status">
-            <button 
-              className={`sync-toggle ${syncMode === 'cloud' ? 'cloud-mode' : 'local-mode'}`}
-              onClick={toggleSyncMode}
-              title={syncMode === 'cloud' ? 'Cloud-Sync aktiv' : 'Nur lokal'}
-            >
-              {syncMode === 'cloud' ? '☁️' : '💻'} {syncMode === 'cloud' ? 'Cloud' : 'Lokal'}
-            </button>
-            
-            {syncMode === 'cloud' && (
-              <>
-                <div className={`status-indicator ${isOnline ? 'online' : 'offline'}`}>
-                  {isOnline ? '🟢' : '🔴'} {isOnline ? 'Online' : 'Offline'}
+          <div className="header-widgets">
+            {/* Wetter Widget */}
+            {currentWeather && !weatherLoading && (
+              <div className="weather-widget" title="Aktuelles Wetter in Mexiko-Stadt">
+                <img 
+                  src={weatherAPI.getIconUrl(currentWeather.icon)} 
+                  alt="Wetter"
+                  style={{width: '50px', height: '50px'}}
+                />
+                <div className="weather-info">
+                  <div className="weather-temp">{currentWeather.temp}°C</div>
+                  <div className="weather-desc">{currentWeather.description}</div>
                 </div>
-                
-                {isSyncing && <div className="syncing">🔄 Sync...</div>}
-                
-                {lastSync && !isSyncing && (
-                  <div className="last-sync" title={lastSync.toLocaleString()}>
-                    🕐 {new Date(lastSync).toLocaleTimeString()}
-                  </div>
-                )}
-                
-                <button className="sync-btn" onClick={syncFromCloud} disabled={!isOnline || isSyncing}>
-                  🔄 Jetzt sync
-                </button>
-              </>
+              </div>
             )}
+            
+            {/* Sync Status */}
+            <div className="sync-status">
+              <button 
+                className={`sync-toggle ${syncMode === 'cloud' ? 'cloud-mode' : 'local-mode'}`}
+                onClick={toggleSyncMode}
+                title={syncMode === 'cloud' ? 'Cloud-Sync aktiv' : 'Nur lokal'}
+              >
+                {syncMode === 'cloud' ? '☁️' : '💻'} {syncMode === 'cloud' ? 'Cloud' : 'Lokal'}
+              </button>
+              
+              {syncMode === 'cloud' && (
+                <>
+                  <div className={`status-indicator ${isOnline ? 'online' : 'offline'}`}>
+                    {isOnline ? '🟢' : '🔴'} {isOnline ? 'Online' : 'Offline'}
+                  </div>
+                  
+                  {isSyncing && <div className="syncing">🔄 Sync...</div>}
+                  
+                  {lastSync && !isSyncing && (
+                    <div className="last-sync" title={lastSync.toLocaleString()}>
+                      🕐 {new Date(lastSync).toLocaleTimeString()}
+                    </div>
+                  )}
+                  
+                  <button className="sync-btn" onClick={syncFromCloud} disabled={!isOnline || isSyncing}>
+                    🔄 Jetzt sync
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
         

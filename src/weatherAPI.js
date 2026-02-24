@@ -3,7 +3,7 @@
 // OpenWeatherMap für Wettervorhersagen
 // ============================================
 
-const WEATHER_API_KEY = 'IHRE_OPENWEATHERMAP_API_KEY'; // Kostenlos auf openweathermap.org
+const WEATHER_API_KEY = 'c85696ce3595b1d2325a570c62e612c0'; // Kostenlos auf openweathermap.org
 const WEATHER_API_URL = 'https://api.openweathermap.org/data/2.5';
 
 class WeatherAPI {

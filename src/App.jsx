@@ -382,7 +382,7 @@ function App() {
   // Google Maps laden
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dqqjZ1pGEFVjko&libraries=geometry`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBUsUSRoOm470zE64np1xLay1WxAQTcF3g&libraries=geometry`;
     script.async = true;
     script.defer = true;
     script.onload = () => setMapLoaded(true);

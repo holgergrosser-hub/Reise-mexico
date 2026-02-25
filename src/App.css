@@ -501,8 +501,8 @@ body {
 }
 
 .ort-item.navarte-return {
-  border-left-color: #E63946;
-  background: linear-gradient(135deg, rgba(230, 57, 70, 0.10) 0%, rgba(255, 255, 255, 1) 60%);
+  border-left-color: #06D6A0;
+  background: linear-gradient(135deg, rgba(6, 214, 160, 0.12) 0%, rgba(255, 255, 255, 1) 60%);
 }
 
 .ort-header {
@@ -738,7 +738,35 @@ body {
 }
 
 .timeline-ort.navarte-return .ort-content {
-  border-left: 4px solid #E63946;
+  border-left: 4px solid #06D6A0;
+}
+
+/* Unterpunkte nach Stunden direkt unter dem passenden Ort */
+.ort-subpoints {
+  margin: 6px 0 12px 18px;
+  padding: 10px 12px;
+  border-left: 3px solid #06D6A0;
+  background: #f8f9fa;
+  border-radius: 10px;
+}
+
+.ort-subpoints-title {
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+}
+
+.ort-subpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ort-subpoint {
+  color: #555;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .ort-content {

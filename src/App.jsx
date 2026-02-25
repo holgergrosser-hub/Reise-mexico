@@ -222,9 +222,36 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const planSubpointsByDate = useMemo(() => {
+  const planByDate = useMemo(() => {
     const byDate = {};
     let currentDate = null;
+    let currentSection = null;
+
+    const ensureDate = (date) => {
+      if (!byDate[date]) {
+        byDate[date] = {
+          sections: [],
+          byStartTime: {},
+          unassigned: []
+        };
+      }
+      return byDate[date];
+    };
+
+    const parseTimeRange = (text) => {
+      const range = text.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+      if (range) return { startTime: range[1], endTime: range[2] };
+      const single = text.match(/(\d{1,2}:\d{2})/);
+      if (single) return { startTime: single[1], endTime: null };
+      return { startTime: null, endTime: null };
+    };
+
+    const isSectionHeading = (line) => {
+      if (/^(Vormittag|Nachmittag|Abend|Früh|Morgen|Mittag|Nacht)\b/i.test(line)) return true;
+      // z.B. "Abfahrt: 07:00" oder ähnliche Zeitblöcke
+      if (/\b(\d{1,2}:\d{2})\b/.test(line) && /[:\-–]/.test(line)) return true;
+      return false;
+    };
 
     (editedDocument || []).forEach((para) => {
       const line = String(para ?? '').trim();
@@ -233,12 +260,34 @@ function App() {
       const dateMatch = line.match(/^(\d{2}\.\d{2})/);
       if (dateMatch) {
         currentDate = dateMatch[1];
-        if (!byDate[currentDate]) byDate[currentDate] = [];
+        ensureDate(currentDate);
+        currentSection = null;
         return;
       }
 
       if (!currentDate) return;
-      byDate[currentDate].push(line);
+
+      const dayObj = ensureDate(currentDate);
+      if (isSectionHeading(line)) {
+        const { startTime, endTime } = parseTimeRange(line);
+        currentSection = {
+          label: line,
+          startTime,
+          endTime,
+          items: []
+        };
+        dayObj.sections.push(currentSection);
+        if (startTime) {
+          dayObj.byStartTime[startTime] = currentSection;
+        }
+        return;
+      }
+
+      if (currentSection) {
+        currentSection.items.push(line);
+      } else {
+        dayObj.unassigned.push(line);
+      }
     });
 
     return byDate;
@@ -477,8 +526,29 @@ function App() {
       lng: -99.1547
     };
 
+    const findFirstTime = (list) => {
+      const timeRegex = /^(\d{1,2}:\d{2})$/;
+      for (const entry of list) {
+        const t = String(entry?.zeit || '').trim();
+        if (timeRegex.test(t)) return t;
+      }
+      return null;
+    };
+
+    const findLastTime = (list) => {
+      const timeRegex = /^(\d{1,2}:\d{2})$/;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const t = String(list[i]?.zeit || '').trim();
+        if (timeRegex.test(t)) return t;
+      }
+      return null;
+    };
+
     const ensureNavarte = (orte) => {
       const list = Array.isArray(orte) ? [...orte] : [];
+
+      const startTime = findFirstTime(list) || '08:00';
+      const returnTime = findLastTime(list) || '22:00';
 
       const hasStart = list.some((o) => String(o?.name || '').toLowerCase().includes('navarte') && String(o?.name || '').toLowerCase().includes('start'));
       const hasReturn = list.some((o) => String(o?.name || '').toLowerCase().includes('navarte') && (String(o?.name || '').toLowerCase().includes('rückkehr') || String(o?.name || '').toLowerCase().includes('rueckkehr')));
@@ -488,7 +558,7 @@ function App() {
           name: 'Navarte (Start)',
           lat: NAVARTE.lat,
           lng: NAVARTE.lng,
-          zeit: 'Start',
+          zeit: startTime,
           dauer: 'Start',
           typ: 'base'
         });
@@ -499,7 +569,7 @@ function App() {
           name: 'Navarte (Rückkehr)',
           lat: NAVARTE.lat,
           lng: NAVARTE.lng,
-          zeit: 'Ende',
+          zeit: returnTime,
           dauer: 'Ende',
           typ: 'base'
         });
@@ -508,17 +578,85 @@ function App() {
       return list;
     };
 
+    // Index bekannter Orte (Name -> Koordinaten) aus allen reiseDatenRaw
+    const knownPlaces = new Map();
+    (reiseDatenRaw || []).forEach((d) => {
+      (d?.orte || []).forEach((o) => {
+        const name = String(o?.name || '').trim();
+        if (!name) return;
+        if (typeof o?.lat !== 'number' || typeof o?.lng !== 'number') return;
+        knownPlaces.set(name.toLowerCase(), { name, lat: o.lat, lng: o.lng });
+      });
+    });
+
+    const findKnownPlaceInLine = (line) => {
+      const text = String(line || '').toLowerCase();
+      for (const [nameLower, place] of knownPlaces.entries()) {
+        if (text.includes(nameLower)) return place;
+      }
+      return null;
+    };
+
+    const injectSubpointPlaces = (day) => {
+      const dayPlan = planByDate?.[day?.datum];
+      if (!dayPlan?.sections?.length) return day;
+
+      const alreadyHas = new Set((day.orte || []).map((o) => String(o?.name || '').toLowerCase()));
+      const byTimeToInsert = {};
+
+      dayPlan.sections.forEach((section) => {
+        if (!section?.startTime) return;
+        (section.items || []).forEach((line) => {
+          const place = findKnownPlaceInLine(line);
+          if (!place) return;
+
+          const key = place.name.toLowerCase();
+          if (alreadyHas.has(key)) return;
+
+          alreadyHas.add(key);
+          if (!byTimeToInsert[section.startTime]) byTimeToInsert[section.startTime] = [];
+          byTimeToInsert[section.startTime].push({
+            name: place.name,
+            lat: place.lat,
+            lng: place.lng,
+            zeit: section.startTime,
+            dauer: 'Optional'
+          });
+        });
+      });
+
+      const newOrte = [];
+      const inserted = new Set();
+
+      (day.orte || []).forEach((o) => {
+        newOrte.push(o);
+        const t = String(o?.zeit || '').trim();
+        if (byTimeToInsert[t] && !inserted.has(t)) {
+          newOrte.push(...byTimeToInsert[t]);
+          inserted.add(t);
+        }
+      });
+
+      // Falls ein Zeitblock keinen passenden Ort hat, ans Ende hängen
+      Object.entries(byTimeToInsert).forEach(([time, items]) => {
+        if (!inserted.has(time)) newOrte.push(...items);
+      });
+
+      return { ...day, orte: newOrte };
+    };
+
     return (reiseDatenRaw || []).map((day) => {
       // "Jeden Tag in Mexico" -> die Mexico City Phase (Tag 0-12)
       if (typeof day?.tag === 'number' && day.tag >= 0 && day.tag <= 12) {
-        return {
+        const withNavarte = {
           ...day,
           orte: ensureNavarte(day.orte)
         };
+        return injectSubpointPlaces(withNavarte);
       }
-      return day;
+      return injectSubpointPlaces(day);
     });
-  }, []);
+  }, [planByDate]);
 
   // Google Maps laden
   useEffect(() => {
@@ -976,16 +1114,31 @@ function App() {
 
                 <div className="orte-liste">
                   {tag.orte.map((ort, idx) => (
-                    <div key={idx} className={`ort-item ${getOrtStyleClass(ort)}`}>
-                      <div className="ort-header">
-                        <span className="ort-zeit">🕐 {ort.zeit}</span>
-                        <strong>{ort.name}</strong>
+                    <React.Fragment key={idx}>
+                      <div className={`ort-item ${getOrtStyleClass(ort)}`}>
+                        <div className="ort-header">
+                          <span className="ort-zeit">🕐 {ort.zeit}</span>
+                          <strong>{ort.name}</strong>
+                        </div>
+                        <div className="ort-details">
+                          <span>⏱️ {ort.dauer}</span>
+                          {ort.entfernung && <span className="entfernung">🚗 {ort.entfernung}</span>}
+                        </div>
                       </div>
-                      <div className="ort-details">
-                        <span>⏱️ {ort.dauer}</span>
-                        {ort.entfernung && <span className="entfernung">🚗 {ort.entfernung}</span>}
-                      </div>
-                    </div>
+
+                      {planByDate[tag.datum]?.byStartTime?.[String(ort.zeit).trim()]?.items?.length > 0 && (
+                        <div className="ort-subpoints">
+                          <div className="ort-subpoints-title">
+                            {planByDate[tag.datum].byStartTime[String(ort.zeit).trim()].label}
+                          </div>
+                          <div className="ort-subpoints-list">
+                            {planByDate[tag.datum].byStartTime[String(ort.zeit).trim()].items.map((line, spIdx) => (
+                              <div key={spIdx} className="ort-subpoint">{line}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
                   ))}
                 </div>
               </div>

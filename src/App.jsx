@@ -949,6 +949,106 @@ function App() {
     const markers = [];
     const infoWindows = [];
 
+    const placesService = new window.google.maps.places.PlacesService(map);
+    const PHOTO_CACHE_KEY = 'mexiko-place-photo-cache-v1';
+
+    const readPhotoCache = () => {
+      try {
+        const raw = localStorage.getItem(PHOTO_CACHE_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch {
+        return {};
+      }
+    };
+
+    const writePhotoCache = (cacheObj) => {
+      try {
+        localStorage.setItem(PHOTO_CACHE_KEY, JSON.stringify(cacheObj || {}));
+      } catch {
+        // ignore
+      }
+    };
+
+    const getPlacesPhoto = (queryText) => {
+      const q = String(queryText ?? '').trim();
+      if (!q) return Promise.resolve(null);
+
+      const cacheKey = normalizeKey(q);
+      const cache = readPhotoCache();
+      const cached = cache?.[cacheKey];
+      if (cached) {
+        if (cached.notFound) return Promise.resolve(null);
+        if (cached.url) return Promise.resolve(cached);
+      }
+
+      return new Promise((resolve) => {
+        // TextSearch ist robust für "Name"-Queries und liefert i.d.R. Photos direkt.
+        placesService.textSearch(
+          { query: `${q} Mexico` },
+          (results, status) => {
+            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !results?.length) {
+              const next = { ...cache, [cacheKey]: { notFound: true } };
+              writePhotoCache(next);
+              resolve(null);
+              return;
+            }
+
+            const place = results[0];
+            const photo = place?.photos?.[0];
+            if (!photo) {
+              const next = { ...cache, [cacheKey]: { notFound: true } };
+              writePhotoCache(next);
+              resolve(null);
+              return;
+            }
+
+            const url = photo.getUrl({ maxWidth: 700, maxHeight: 440 });
+            const attributionHtml = Array.isArray(photo.html_attributions)
+              ? photo.html_attributions.join(' ')
+              : '';
+
+            const payload = { url, attributionHtml };
+            const next = { ...cache, [cacheKey]: payload };
+            writePhotoCache(next);
+            resolve(payload);
+          }
+        );
+      });
+    };
+
+    const buildInfoContent = ({ ort, tag, markerColor, photoUrl, photoAttributionHtml }) => {
+      const safePhotoUrl = photoUrl || '';
+      const attributionBlock = photoAttributionHtml
+        ? `<div style="margin-top: 6px; font-size: 11px; color: #666;">${photoAttributionHtml}</div>`
+        : '';
+
+      return `
+        <div style="padding: 10px; min-width: 250px; max-width: 350px;">
+          <div style="margin-bottom: 10px;">
+            <img src="${safePhotoUrl}" 
+                 style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
+                 alt="${ort.name}"
+                 onerror="this.src='https://source.unsplash.com/400x250/?mexico+city,travel'">
+            ${attributionBlock}
+          </div>
+          <h3 style="margin: 0 0 8px 0; color: ${markerColor}; font-size: 16px;">
+            ${ort.typ === 'base' ? '🏠' : '🕐'} ${ort.zeit} - ${ort.name}
+          </h3>
+          <p style="margin: 4px 0; font-size: 13px;"><strong>📅 Tag ${tag.tag} - ${tag.datum}</strong> - ${tag.title}</p>
+          <p style="margin: 4px 0; font-size: 13px;">⏱️ Aufenthalt: ${ort.dauer}</p>
+          ${ort.entfernung ? `<p style="margin: 4px 0; font-size: 14px; color: #E63946; font-weight: bold;">🚗 ${ort.entfernung} vom vorherigen Ort</p>` : ''}
+          ${tag.gesamtEntfernung ? `<p style="margin: 8px 0 4px 0; font-size: 12px; background: #f0f0f0; padding: 6px; border-radius: 4px;"><strong>📊 Gesamt heute:</strong> ${tag.gesamtEntfernung} • ${tag.gesamtFahrtzeit} Fahrtzeit</p>` : ''}
+          <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">${tag.beschreibung}</p>
+          ${tag.hinweis ? `<p style="margin: 4px 0; font-size: 12px; color: #E63946; font-weight: bold;">⚠️ ${tag.hinweis}</p>` : ''}
+          <button onclick="window.goToNotes(${tag.tag})" 
+                  style="margin-top: 10px; background: #667eea; color: white; border: none; 
+                         padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 13px;">
+            📝 Zu den Notizen von Tag ${tag.tag}
+          </button>
+        </div>
+      `;
+    };
+
     // Nur ausgewählten Tag zeigen wenn filteredDay gesetzt ist
     const tagsToShow = filteredDay 
       ? reiseDaten.filter(tag => tag.tag === filteredDay)
@@ -984,9 +1084,9 @@ function App() {
           }
         });
 
-        // EINFACHES BILD-SYSTEM: Unsplash (kein API Key nötig!)
+        // Fallback-Bild (wenn Places kein Foto liefert)
         const searchTerm = encodeURIComponent(ort.name + ' mexico');
-        const imageUrl = `https://source.unsplash.com/400x250/?${searchTerm}`;
+        const fallbackImageUrl = `https://source.unsplash.com/400x250/?${searchTerm}`;
 
         // Entfernungslinie zum vorherigen Ort zeichnen
         if (ortIndex > 0) {
@@ -1015,38 +1115,31 @@ function App() {
           });
         }
 
-        const infoContent = `
-          <div style="padding: 10px; min-width: 250px; max-width: 350px;">
-            <div style="margin-bottom: 10px;">
-              <img src="${imageUrl}" 
-                   style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
-                   alt="${ort.name}"
-                   onerror="this.src='https://source.unsplash.com/400x250/?mexico+city,travel'">
-            </div>
-            <h3 style="margin: 0 0 8px 0; color: ${markerColor}; font-size: 16px;">
-              ${ort.typ === 'base' ? '🏠' : '🕐'} ${ort.zeit} - ${ort.name}
-            </h3>
-            <p style="margin: 4px 0; font-size: 13px;"><strong>📅 Tag ${tag.tag} - ${tag.datum}</strong> - ${tag.title}</p>
-            <p style="margin: 4px 0; font-size: 13px;">⏱️ Aufenthalt: ${ort.dauer}</p>
-            ${ort.entfernung ? `<p style="margin: 4px 0; font-size: 14px; color: #E63946; font-weight: bold;">🚗 ${ort.entfernung} vom vorherigen Ort</p>` : ''}
-            ${tag.gesamtEntfernung ? `<p style="margin: 8px 0 4px 0; font-size: 12px; background: #f0f0f0; padding: 6px; border-radius: 4px;"><strong>📊 Gesamt heute:</strong> ${tag.gesamtEntfernung} • ${tag.gesamtFahrtzeit} Fahrtzeit</p>` : ''}
-            <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">${tag.beschreibung}</p>
-            ${tag.hinweis ? `<p style="margin: 4px 0; font-size: 12px; color: #E63946; font-weight: bold;">⚠️ ${tag.hinweis}</p>` : ''}
-            <button onclick="window.goToNotes(${tag.tag})" 
-                    style="margin-top: 10px; background: #667eea; color: white; border: none; 
-                           padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 13px;">
-              📝 Zu den Notizen von Tag ${tag.tag}
-            </button>
-          </div>
-        `;
-
         const infoWindow = new window.google.maps.InfoWindow({
-          content: infoContent
+          content: buildInfoContent({
+            ort,
+            tag,
+            markerColor,
+            photoUrl: fallbackImageUrl,
+            photoAttributionHtml: ''
+          })
         });
 
         marker.addListener('click', () => {
           infoWindows.forEach(iw => iw.close());
           infoWindow.open(map, marker);
+
+          // Lazy: Foto erst beim Klick suchen (Quota/Performance)
+          getPlacesPhoto(ort.name).then((photo) => {
+            if (!photo?.url) return;
+            infoWindow.setContent(buildInfoContent({
+              ort,
+              tag,
+              markerColor,
+              photoUrl: photo.url,
+              photoAttributionHtml: photo.attributionHtml
+            }));
+          });
         });
 
         markers.push(marker);

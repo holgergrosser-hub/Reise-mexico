@@ -1028,13 +1028,23 @@ function App() {
                   const normalized = para.trimStart();
                   const isHeader = normalized.match(/^\d{2}\.\d{2}/) || normalized.includes('Vormittag') || normalized.includes('Nachmittag') || normalized.includes('Abend');
                   const isDay = normalized.match(/^\d{2}\.\d{2}/);
+                  const bulletMatch = normalized.match(/^([\-•*]|)\s*(.+)$/);
+                  const isBullet = Boolean(bulletMatch) && !isDay;
+                  const displayText = isBullet ? bulletMatch[2] : normalized;
                   
                   return (
                     <div 
                       key={idx} 
-                      className={`doc-paragraph ${isDay ? 'day-header' : ''} ${isHeader ? 'section-header' : ''}`}
+                      className={`doc-paragraph ${isDay ? 'day-header' : ''} ${isHeader ? 'section-header' : ''} ${isBullet ? 'bullet' : ''}`}
                     >
-                      {normalized}
+                      {isBullet ? (
+                        <>
+                          <span className="doc-bullet">•</span>
+                          <span className="doc-bullet-text">{displayText}</span>
+                        </>
+                      ) : (
+                        displayText
+                      )}
                     </div>
                   );
                 })}

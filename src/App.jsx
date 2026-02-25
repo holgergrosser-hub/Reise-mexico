@@ -311,6 +311,25 @@ function App() {
     return byDate;
   }, [editedDocument]);
 
+  const planSubpointsByDate = useMemo(() => {
+    const out = {};
+    for (const [date, dayObj] of Object.entries(planByDate || {})) {
+      const lines = [];
+      (dayObj?.sections || []).forEach((sec) => {
+        (sec?.items || []).forEach((item) => {
+          const text = String(item ?? '').trim();
+          if (text) lines.push(text);
+        });
+      });
+      (dayObj?.unassigned || []).forEach((item) => {
+        const text = String(item ?? '').trim();
+        if (text) lines.push(text);
+      });
+      out[date] = lines;
+    }
+    return out;
+  }, [planByDate]);
+
   const normalizeKey = (text) => {
     return String(text || '')
       .normalize('NFD')

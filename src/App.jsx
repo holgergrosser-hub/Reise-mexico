@@ -300,68 +300,6 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const todayInfo = useMemo(() => {
-    const TRAVEL_YEAR = 2025;
-    if (!Array.isArray(reiseDaten) || reiseDaten.length === 0) return null;
-
-    const now = new Date();
-    const pad2 = (n) => String(n).padStart(2, '0');
-    const todayKey = `${pad2(now.getDate())}.${pad2(now.getMonth() + 1)}`;
-
-    const parseDatum = (datum) => {
-      const match = String(datum || '').match(/^(\d{2})\.(\d{2})$/);
-      if (!match) return null;
-      const dd = parseInt(match[1], 10);
-      const mm = parseInt(match[2], 10);
-      return new Date(TRAVEL_YEAR, mm - 1, dd);
-    };
-
-    const schedule = reiseDaten
-      .map((t) => ({
-        tag: t,
-        dateObj: parseDatum(t?.datum)
-      }))
-      .filter((x) => x.dateObj instanceof Date && !Number.isNaN(x.dateObj.valueOf()))
-      .sort((a, b) => a.dateObj - b.dateObj);
-
-    const exact = reiseDaten.find((t) => t?.datum === todayKey) || null;
-    const nowInTravelYear = new Date(TRAVEL_YEAR, now.getMonth(), now.getDate());
-    const nextUpcoming = schedule.find((x) => x.dateObj >= nowInTravelYear)?.tag || schedule[0]?.tag || null;
-
-    const tag = exact || nextUpcoming;
-    if (!tag) return null;
-
-    const isToday = tag?.datum === todayKey;
-    const parseTimeToMinutes = (timeText) => {
-      const m = String(timeText || '').match(/^(\d{1,2}):(\d{2})$/);
-      if (!m) return null;
-      const hh = parseInt(m[1], 10);
-      const mm = parseInt(m[2], 10);
-      return hh * 60 + mm;
-    };
-
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const orte = Array.isArray(tag?.orte) ? tag.orte : [];
-    let nextOrt = orte[0] || null;
-    if (isToday && orte.length > 0) {
-      nextOrt = orte.find((o) => {
-        const mins = parseTimeToMinutes(o?.zeit);
-        return mins != null && mins >= nowMinutes;
-      }) || orte[orte.length - 1];
-    }
-
-    const noteObj = coerceNoteObject(notes?.[String(tag.tag)]);
-    const meeting = String(noteObj?.treffpunkt || '').trim() || String(nextOrt?.name || '').trim();
-
-    return {
-      tag,
-      nextOrt,
-      meeting,
-      noteObj,
-      isToday
-    };
-  }, [reiseDaten, notes]);
-
   const updateDocumentParagraph = (index, text) => {
     setEditedDocument(prev => {
       const newDoc = [...prev];
@@ -1059,6 +997,69 @@ function App() {
       return injectSubpointPlaces(day);
     });
   }, [planByDate, placeCache]);
+
+  const todayInfo = useMemo(() => {
+    const TRAVEL_YEAR = 2025;
+    if (!Array.isArray(reiseDaten) || reiseDaten.length === 0) return null;
+
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const todayKey = `${pad2(now.getDate())}.${pad2(now.getMonth() + 1)}`;
+
+    const parseDatum = (datum) => {
+      const match = String(datum || '').match(/^(\d{2})\.(\d{2})$/);
+      if (!match) return null;
+      const dd = parseInt(match[1], 10);
+      const mm = parseInt(match[2], 10);
+      return new Date(TRAVEL_YEAR, mm - 1, dd);
+    };
+
+    const schedule = reiseDaten
+      .map((t) => ({
+        tag: t,
+        dateObj: parseDatum(t?.datum)
+      }))
+      .filter((x) => x.dateObj instanceof Date && !Number.isNaN(x.dateObj.valueOf()))
+      .sort((a, b) => a.dateObj - b.dateObj);
+
+    const exact = reiseDaten.find((t) => t?.datum === todayKey) || null;
+    const nowInTravelYear = new Date(TRAVEL_YEAR, now.getMonth(), now.getDate());
+    const nextUpcoming = schedule.find((x) => x.dateObj >= nowInTravelYear)?.tag || schedule[0]?.tag || null;
+
+    const tag = exact || nextUpcoming;
+    if (!tag) return null;
+
+    const isToday = tag?.datum === todayKey;
+    const parseTimeToMinutes = (timeText) => {
+      const m = String(timeText || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return null;
+      const hh = parseInt(m[1], 10);
+      const mm = parseInt(m[2], 10);
+      return hh * 60 + mm;
+    };
+
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const orte = Array.isArray(tag?.orte) ? tag.orte : [];
+    let nextOrt = orte[0] || null;
+    if (isToday && orte.length > 0) {
+      nextOrt =
+        orte.find((o) => {
+          const mins = parseTimeToMinutes(o?.zeit);
+          return mins != null && mins >= nowMinutes;
+        }) || orte[orte.length - 1];
+    }
+
+    const noteObj = coerceNoteObject(notes?.[String(tag.tag)]);
+    const meeting = String(noteObj?.treffpunkt || '').trim() || String(nextOrt?.name || '').trim();
+
+    return {
+      tag,
+      nextOrt,
+      meeting,
+      noteObj,
+      isToday
+    };
+  }, [reiseDaten, notes]);
 
   // Google Maps laden
   useEffect(() => {

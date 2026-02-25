@@ -950,7 +950,8 @@ function App() {
     const infoWindows = [];
 
     const placesService = new window.google.maps.places.PlacesService(map);
-    const PHOTO_CACHE_KEY = 'mexiko-place-photo-cache-v1';
+    // v2: Cache-Version bump, damit alte "notFound"-Einträge nicht alles blockieren
+    const PHOTO_CACHE_KEY = 'mexiko-place-photo-cache-v2';
 
     const readPhotoCache = () => {
       try {
@@ -1002,7 +1003,10 @@ function App() {
         return Promise.resolve({ ok: false, status: 'NO_QUERY', url: null, attributionHtml: '', fromCache: false });
       }
 
-      const cacheKey = normalizeKey(q);
+      const locKey = (biasLocation?.lat != null && biasLocation?.lng != null)
+        ? `@${Number(biasLocation.lat).toFixed(3)},${Number(biasLocation.lng).toFixed(3)}`
+        : '';
+      const cacheKey = normalizeKey(`${q}${locKey}`);
       const cache = readPhotoCache();
       const cached = cache?.[cacheKey];
       if (cached) {

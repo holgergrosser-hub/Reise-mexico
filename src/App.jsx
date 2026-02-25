@@ -314,7 +314,8 @@ function App() {
   const normalizeKey = (text) => {
     return String(text || '')
       .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
+      // Kein Unicode-Property-Regex (\p{...}) nutzen: kann in manchen Browsern crashen.
+      .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();

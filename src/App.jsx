@@ -670,6 +670,12 @@ function App() {
         const res = await resolveOne(item);
         if (!res) continue;
 
+        if (res.notFound) {
+          console.warn('[Places] not found:', item.label);
+        } else {
+          console.log('[Places] resolved:', item.label, res.place);
+        }
+
         setPlaceCache((prev) => {
           if (prev?.[res.key]) return prev;
           if (res.notFound) return { ...prev, [res.key]: { notFound: true } };

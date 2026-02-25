@@ -117,9 +117,15 @@ function getAllNotes() {
     const notes = {};
     
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] && data[i][1]) {
-        notes[data[i][0]] = {
-          text: data[i][1],
+      const day = data[i][0];
+      const noteText = data[i][1];
+      const hasDay = day !== '' && day !== null && day !== undefined;
+      const hasText = noteText !== '' && noteText !== null && noteText !== undefined;
+
+      // Wichtig: Tag 0 ist gültig, aber in JS "falsy".
+      if (hasDay && hasText) {
+        notes[day] = {
+          text: noteText,
           user: data[i][2] || 'Unbekannt',
           timestamp: data[i][3] || ''
         };

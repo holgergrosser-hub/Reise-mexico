@@ -59,10 +59,38 @@ function App() {
   // Lokale Daten laden
   const loadLocalData = () => {
     const savedNotes = localStorage.getItem('mexiko-reise-notizen');
-    if (savedNotes) setNotes(JSON.parse(savedNotes));
+    if (savedNotes) {
+      try {
+        setNotes(normalizeNotesForUI(JSON.parse(savedNotes)));
+      } catch (e) {
+        console.warn('Lokale Notizen konnten nicht gelesen werden:', e);
+      }
+    }
     
     const savedDoc = localStorage.getItem('mexiko-reise-dokument');
     if (savedDoc) setEditedDocument(JSON.parse(savedDoc));
+  };
+
+  const normalizeNotesForUI = (rawNotes) => {
+    const normalized = {};
+    if (!rawNotes || typeof rawNotes !== 'object') return normalized;
+
+    Object.entries(rawNotes).forEach(([rawKey, rawValue]) => {
+      const keyString = String(rawKey);
+      const numberMatch = keyString.match(/\d+/);
+      const dayKey = numberMatch ? String(parseInt(numberMatch[0], 10)) : keyString;
+
+      let text = '';
+      if (typeof rawValue === 'string') {
+        text = rawValue;
+      } else if (rawValue && typeof rawValue === 'object') {
+        text = rawValue.text ?? rawValue.note ?? '';
+      }
+
+      normalized[dayKey] = String(text ?? '');
+    });
+
+    return normalized;
   };
 
   // Von Cloud synchronisieren
@@ -74,11 +102,7 @@ function App() {
       if (data.status === 'success') {
         // Notizen aktualisieren
         if (data.notes) {
-          const notesObj = {};
-          Object.keys(data.notes).forEach(key => {
-            notesObj[key] = data.notes[key].text;
-          });
-          setNotes(notesObj);
+          setNotes(normalizeNotesForUI(data.notes));
         }
         
         // Dokument aktualisieren

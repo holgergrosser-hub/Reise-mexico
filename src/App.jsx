@@ -3,7 +3,6 @@ import './App.css';
 import reiseplanData from './reiseplan-text.json';
 import CloudAPI from './cloudAPI';
 import WeatherAPI from './weatherAPI';
-import config from './config';
 
 function App() {
   const [selectedDay, setSelectedDay] = useState(null);
@@ -48,16 +47,16 @@ function App() {
     };
     
     initSync();
-    
-    // Auto-Sync alle 30 Sekunden
-    const interval = setInterval(() => {
-      if (syncMode === 'cloud' && isOnline) {
-        syncFromCloud();
-      }
-    }, 30000);
-    
-    return () => clearInterval(interval);
   }, [syncMode]);
+
+  // Auto-Sync alle 30 Sekunden (mit aktuellem Online-Status)
+  useEffect(() => {
+    if (syncMode !== 'cloud' || !isOnline) return;
+    const interval = setInterval(() => {
+      syncFromCloud();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [syncMode, isOnline]);
 
   // Lokale Daten laden
   const loadLocalData = () => {
@@ -91,6 +90,9 @@ function App() {
         
         setLastSync(new Date());
         setIsOnline(true);
+      } else {
+        console.warn('Sync nicht erfolgreich:', data);
+        setIsOnline(false);
       }
     } catch (error) {
       console.error('Sync Fehler:', error);
@@ -130,8 +132,10 @@ function App() {
     }));
     
     // Cloud-Sync
-    if (syncMode === 'cloud' && isOnline) {
-      await cloudAPI.saveNote(day, text);
+    if (syncMode === 'cloud') {
+      const result = await cloudAPI.saveNote(day, text);
+      if (result?.status === 'success') setIsOnline(true);
+      if (result?.status === 'error') setIsOnline(false);
     }
   };
 
@@ -161,14 +165,16 @@ function App() {
   };
 
   const saveDocumentToCloud = async () => {
-    if (syncMode === 'cloud' && isOnline) {
+    if (syncMode === 'cloud') {
       setIsSyncing(true);
       const result = await cloudAPI.saveDocument(editedDocument);
       setIsSyncing(false);
       
       if (result.status === 'success') {
+        setIsOnline(true);
         alert('✅ Dokument in Cloud gespeichert!');
       } else {
+        setIsOnline(false);
         alert('❌ Fehler beim Speichern: ' + result.message);
       }
     }
@@ -420,8 +426,24 @@ function App() {
 
   // Google Maps laden
   useEffect(() => {
+    if (window.google?.maps) {
+      setMapLoaded(true);
+      return;
+    }
+
+    const existing = document.getElementById('google-maps-js');
+    if (existing) {
+      existing.addEventListener('load', () => setMapLoaded(true));
+      return;
+    }
+
     const script = document.createElement('script');
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBFw0Qbyq9zTFTd-tUY6dqqjZ1pGEFVjko';
+    script.id = 'google-maps-js';
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      console.error('Google Maps API Key fehlt: VITE_GOOGLE_MAPS_API_KEY ist nicht gesetzt');
+      return;
+    }
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,places`;
     script.async = true;
     script.defer = true;
@@ -679,7 +701,7 @@ function App() {
                     </div>
                   )}
                   
-                  <button className="sync-btn" onClick={syncFromCloud} disabled={!isOnline || isSyncing}>
+                  <button className="sync-btn" onClick={syncFromCloud} disabled={isSyncing}>
                     🔄 Jetzt sync
                   </button>
                 </>
@@ -931,15 +953,16 @@ function App() {
                   Buchungsbestätigungen oder Änderungen direkt im Dokument einzutragen!</p>
                 </div>
                 {editedDocument.map((para, idx) => {
-                  const isHeader = para.match(/^\d{2}\.\d{2}/) || para.includes('Vormittag') || para.includes('Nachmittag') || para.includes('Abend');
-                  const isDay = para.match(/^\d{2}\.\d{2}/);
+                  const normalized = para.trimStart();
+                  const isHeader = normalized.match(/^\d{2}\.\d{2}/) || normalized.includes('Vormittag') || normalized.includes('Nachmittag') || normalized.includes('Abend');
+                  const isDay = normalized.match(/^\d{2}\.\d{2}/);
                   
                   return (
                     <div 
                       key={idx} 
                       className={`doc-paragraph ${isDay ? 'day-header' : ''} ${isHeader ? 'section-header' : ''}`}
                     >
-                      {para}
+                      {normalized}
                     </div>
                   );
                 })}
@@ -952,7 +975,8 @@ function App() {
                   im Browser gespeichert. Klicken Sie auf "Exportieren", um eine Textdatei zu erstellen.</p>
                 </div>
                 {editedDocument.map((para, idx) => {
-                  const isHeader = para.match(/^\d{2}\.\d{2}/) || para.includes('Vormittag') || para.includes('Nachmittag') || para.includes('Abend');
+                  const normalized = para.trimStart();
+                  const isHeader = normalized.match(/^\d{2}\.\d{2}/) || normalized.includes('Vormittag') || normalized.includes('Nachmittag') || normalized.includes('Abend');
                   
                   return (
                     <div key={idx} className="edit-paragraph">
@@ -960,15 +984,15 @@ function App() {
                         <input
                           type="text"
                           className="edit-input header"
-                          value={para}
+                          value={normalized}
                           onChange={(e) => updateDocumentParagraph(idx, e.target.value)}
                         />
                       ) : (
                         <textarea
                           className="edit-textarea"
-                          value={para}
+                          value={normalized}
                           onChange={(e) => updateDocumentParagraph(idx, e.target.value)}
-                          rows={Math.max(2, Math.ceil(para.length / 80))}
+                          rows={Math.max(2, Math.ceil(normalized.length / 80))}
                         />
                       )}
                     </div>

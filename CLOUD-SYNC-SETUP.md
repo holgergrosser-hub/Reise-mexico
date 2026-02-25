@@ -54,14 +54,20 @@ Mit Cloud-Sync können **mehrere Personen gleichzeitig** an der Reiseplanung arb
 
 ### Schritt 3: Frontend konfigurieren
 
-1. Öffnen Sie `src/cloudAPI.js`
-2. Ersetzen Sie in Zeile 7:
-   ```javascript
-   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/IHRE_DEPLOYMENT_ID/exec';
-   ```
-   Mit Ihrer echten URL aus Schritt 2
+Die App liest die Apps-Script URL aus einer Environment Variable.
 
-3. Speichern und deployen:
+**Netlify (empfohlen):**
+1. Site settings → **Environment variables**
+2. Variable setzen:
+   - Key: `VITE_APPS_SCRIPT_URL`
+   - Value: `https://script.google.com/macros/s/.../exec`
+
+**Lokal (Vite):**
+1. Datei `.env.local` im Projekt-Root anlegen
+2. Eintragen:
+   `VITE_APPS_SCRIPT_URL=https://script.google.com/macros/s/.../exec`
+
+Danach deployen:
    ```bash
    git add .
    git commit -m "Cloud-Sync aktiviert"

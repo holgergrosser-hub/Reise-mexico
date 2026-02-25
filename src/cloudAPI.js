@@ -3,13 +3,27 @@
 // Verbindung zu Google Apps Script Backend
 // ============================================
 
-// WICHTIG: Diese URL nach Deployment des Google Apps Scripts eintragen!
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/IHRE_DEPLOYMENT_ID/exec';
+// Apps Script Web-App URL (Netlify/Vite Env): VITE_APPS_SCRIPT_URL
+// Fallback ist leer -> Cloud-Sync bleibt offline.
+const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL || '';
+
+function isConfiguredAppsScriptUrl(url) {
+  return Boolean(url) && !url.includes('IHRE_DEPLOYMENT_ID');
+}
 
 class CloudAPI {
   constructor() {
     this.url = APPS_SCRIPT_URL;
     this.userName = this.getUserName();
+  }
+
+  buildFormBody(payload) {
+    const params = new URLSearchParams();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      params.append(key, typeof value === 'string' ? value : String(value));
+    });
+    return params;
   }
 
   // Benutzername verwalten
@@ -30,15 +44,20 @@ class CloudAPI {
   // Notiz speichern
   async saveNote(day, note) {
     try {
-      const formData = new FormData();
-      formData.append('action', 'saveNote');
-      formData.append('day', day);
-      formData.append('note', note);
-      formData.append('user', this.userName);
+      if (!isConfiguredAppsScriptUrl(this.url)) {
+        return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
+      }
+
+      const body = this.buildFormBody({
+        action: 'saveNote',
+        day,
+        note,
+        user: this.userName
+      });
 
       const response = await fetch(this.url, {
         method: 'POST',
-        body: formData
+        body
       });
 
       const data = await response.json();
@@ -53,6 +72,9 @@ class CloudAPI {
   // Alle Notizen abrufen
   async getAllNotes() {
     try {
+      if (!isConfiguredAppsScriptUrl(this.url)) {
+        return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
+      }
       const response = await fetch(`${this.url}?action=getNotes`);
       const data = await response.json();
       console.log('Notizen abgerufen:', data);
@@ -66,13 +88,18 @@ class CloudAPI {
   // Notiz löschen
   async deleteNote(day) {
     try {
-      const formData = new FormData();
-      formData.append('action', 'deleteNote');
-      formData.append('day', day);
+      if (!isConfiguredAppsScriptUrl(this.url)) {
+        return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
+      }
+
+      const body = this.buildFormBody({
+        action: 'deleteNote',
+        day
+      });
 
       const response = await fetch(this.url, {
         method: 'POST',
-        body: formData
+        body
       });
 
       const data = await response.json();
@@ -87,14 +114,21 @@ class CloudAPI {
   // Dokument speichern
   async saveDocument(paragraphs) {
     try {
-      const formData = new FormData();
-      formData.append('action', 'saveDocument');
-      formData.append('paragraphs', JSON.stringify(paragraphs));
-      formData.append('user', this.userName);
+      if (!isConfiguredAppsScriptUrl(this.url)) {
+        return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
+      }
+
+      const body = this.buildFormBody({
+        action: 'saveDocument',
+        // Apps Script empfängt über e.parameter typischerweise Strings.
+        // Backend kann JSON-String oder Array verarbeiten.
+        paragraphs: JSON.stringify(paragraphs),
+        user: this.userName
+      });
 
       const response = await fetch(this.url, {
         method: 'POST',
-        body: formData
+        body
       });
 
       const data = await response.json();
@@ -109,6 +143,9 @@ class CloudAPI {
   // Dokument abrufen
   async getDocument() {
     try {
+      if (!isConfiguredAppsScriptUrl(this.url)) {
+        return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
+      }
       const response = await fetch(`${this.url}?action=getDocument`);
       const data = await response.json();
       console.log('Dokument abgerufen:', data);
@@ -122,6 +159,9 @@ class CloudAPI {
   // Alle Daten abrufen (Sync)
   async syncAll() {
     try {
+      if (!isConfiguredAppsScriptUrl(this.url)) {
+        return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
+      }
       const response = await fetch(`${this.url}?action=getAll`);
       const data = await response.json();
       console.log('Alle Daten synchronisiert:', data);
@@ -135,9 +175,14 @@ class CloudAPI {
   // Online-Status prüfen
   async checkConnection() {
     try {
-      const response = await fetch(`${this.url}?action=getAll`, {
-        signal: AbortSignal.timeout(5000) // 5 Sekunden Timeout
-      });
+      if (!isConfiguredAppsScriptUrl(this.url)) return false;
+
+      const options = {};
+      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+        options.signal = AbortSignal.timeout(5000); // 5 Sekunden Timeout
+      }
+
+      const response = await fetch(`${this.url}?action=getAll`, options);
       return response.ok;
     } catch (error) {
       console.error('Verbindung fehlgeschlagen:', error);

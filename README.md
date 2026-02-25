@@ -85,7 +85,7 @@ Für **Team-Collaboration** siehe detaillierte Anleitung:
 **Kurzversion:**
 1. Google Sheet erstellen
 2. Google Apps Script deployen (`/google-apps-script/Code.gs`)
-3. URL in `src/cloudAPI.js` eintragen
+3. Apps-Script URL als Env-Var setzen: `VITE_APPS_SCRIPT_URL` (z.B. in Netlify)
 4. Fertig!
 
 **Ohne Cloud-Sync:** App funktioniert im lokalen Modus (nur Browser-Speicher)
@@ -153,10 +153,10 @@ Projekt nutzt Standard ESLint Config von Vite/React
 ## 📝 Anpassungen
 
 ### Google Maps API Key
-Standardmäßig wird ein öffentlicher API Key verwendet. Für Production:
+Die App nutzt `VITE_GOOGLE_MAPS_API_KEY` (Environment Variable). Für Production:
 1. Erstellen Sie einen eigenen Key: https://console.cloud.google.com
-2. Ersetzen Sie in `src/App.jsx` (Zeile ~152)
-3. Beschränken Sie den Key auf Ihre Domain
+2. Setzen Sie `VITE_GOOGLE_MAPS_API_KEY` (z.B. in Netlify)
+3. Beschränken Sie den Key auf Ihre Domain (HTTP referrers)
 
 ### Farben & Design
 Hauptfarben in `src/App.css`:

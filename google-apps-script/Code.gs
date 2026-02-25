@@ -162,6 +162,19 @@ function deleteNote(day) {
 // Dokument speichern
 function saveDocument(paragraphs, user) {
   try {
+    // Frontend kann paragraphs als Array ODER JSON-String senden.
+    if (typeof paragraphs === 'string') {
+      try {
+        paragraphs = JSON.parse(paragraphs);
+      } catch (e) {
+        return jsonResponse({ status: 'error', message: 'Ungültiges paragraphs-Format (JSON erwartet)' });
+      }
+    }
+
+    if (!Array.isArray(paragraphs)) {
+      return jsonResponse({ status: 'error', message: 'paragraphs muss ein Array sein' });
+    }
+
     const ss = SpreadsheetApp.openById(SHEET_ID);
     let sheet = ss.getSheetByName('Dokument');
     

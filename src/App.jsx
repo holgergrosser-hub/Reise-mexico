@@ -12,6 +12,16 @@ function App() {
   const [editedDocument, setEditedDocument] = useState(reiseplanData.paragraphs);
   const [isEditingDoc, setIsEditingDoc] = useState(false);
   const [filteredDay, setFilteredDay] = useState(null); // Für Kartenfilter
+
+  // Cache für automatisch gefundene Orte (Google Places)
+  const [placeCache, setPlaceCache] = useState(() => {
+    try {
+      const raw = localStorage.getItem('mexiko-place-cache-v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
   
   // Cloud-Sync States
   const [cloudAPI] = useState(() => new CloudAPI());
@@ -137,6 +147,14 @@ function App() {
     // Lokales Backup
     localStorage.setItem('mexiko-reise-dokument', JSON.stringify(editedDocument));
   }, [editedDocument]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mexiko-place-cache-v1', JSON.stringify(placeCache));
+    } catch {
+      // ignore
+    }
+  }, [placeCache]);
 
   // Sync-Modus wechseln
   const toggleSyncMode = () => {
@@ -292,6 +310,55 @@ function App() {
 
     return byDate;
   }, [editedDocument]);
+
+  const normalizeKey = (text) => {
+    return String(text || '')
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  };
+
+  const extractPlaceCandidate = (line) => {
+    const raw = String(line || '').trim();
+    if (!raw) return null;
+
+    // offensichtliche Nicht-Orte
+    if (/^(TICKETS|Kosten:|Hinweis:|Programm:|Rückkehr:|Abfahrt:|Frühstück|Lunch|Dinner|Option)/i.test(raw)) return null;
+    if (/\bStunden\b|\bUhr\b|\bStd\b|\bMin\b/i.test(raw) && !/[A-ZÄÖÜ]/.test(raw)) return null;
+
+    // Entferne Zeit-/Kategoriezeilen
+    if (/^(Vormittag|Nachmittag|Abend|Früh|Morgen|Mittag|Nacht)\b/i.test(raw)) return null;
+
+    // Kandidat aus "X: Beschreibung" -> X
+    let base = raw;
+    if (base.includes(':')) {
+      base = base.split(':')[0];
+    }
+
+    // Kandidat aus "X - ..." -> X
+    if (base.includes(' - ')) {
+      base = base.split(' - ')[0];
+    }
+
+    // Klammern entfernen
+    base = base.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!base) return null;
+
+    // sehr lange Sätze ignorieren
+    if (base.length > 80) return null;
+
+    // Heuristik: muss wie ein Ort aussehen
+    const looksLikePlace = /(Mercado|Casa|Palacio|Catedral|Plaza|Torre|Parque|Alameda|Castillo|Basilica|Biblioteca|Cenote|Museo|Museum|Street|Avenue|Avenida|Centro|Jard[ií]n|Bosque|Iglesia|Church)/i.test(base);
+    const hasCaps = /[A-ZÄÖÜ]/.test(base);
+    if (!looksLikePlace && !hasCaps) return null;
+
+    return {
+      label: base,
+      key: normalizeKey(base)
+    };
+  };
 
   // Reisedaten mit allen Orten und Fahrzeiten
   const reiseDatenRaw = [
@@ -519,6 +586,103 @@ function App() {
     }
   ];
 
+  const dateToTag = useMemo(() => {
+    const m = {};
+    (reiseDatenRaw || []).forEach((d) => {
+      m[d.datum] = d.tag;
+    });
+    return m;
+  }, []);
+
+  // Fehlende Orte aus Unterpunkten automatisch per Google Places auflösen
+  useEffect(() => {
+    if (!mapLoaded) return;
+    if (!window.google?.maps?.places) return;
+
+    const resolvedKeys = new Set(Object.keys(placeCache || {}));
+    const candidates = [];
+
+    Object.entries(planByDate || {}).forEach(([date, dayPlan]) => {
+      const tagNum = dateToTag[date];
+      (dayPlan?.sections || []).forEach((section) => {
+        (section.items || []).forEach((line) => {
+          const cand = extractPlaceCandidate(line);
+          if (!cand) return;
+          if (resolvedKeys.has(cand.key)) return;
+          candidates.push({ ...cand, date, tagNum });
+          resolvedKeys.add(cand.key);
+        });
+      });
+    });
+
+    if (!candidates.length) return;
+
+    const limit = 12; // pro Session begrenzen
+    const queue = candidates.slice(0, limit);
+    let cancelled = false;
+
+    const service = new window.google.maps.places.PlacesService(document.createElement('div'));
+
+    const centerForTag = (tagNum) => {
+      // Mexico City als Default
+      if (typeof tagNum !== 'number') return { lat: 19.4326, lng: -99.1332 };
+      if (tagNum >= 13) return { lat: 20.2114, lng: -87.4654 }; // Tulum Region
+      return { lat: 19.4326, lng: -99.1332 };
+    };
+
+    const resolveOne = (item) => {
+      return new Promise((resolve) => {
+        const center = centerForTag(item.tagNum);
+        const query = `${item.label}, Mexico`;
+
+        service.textSearch(
+          {
+            query,
+            location: new window.google.maps.LatLng(center.lat, center.lng),
+            radius: 60000
+          },
+          (results, status) => {
+            if (cancelled) return resolve(null);
+            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !results?.length) {
+              return resolve({ key: item.key, notFound: true });
+            }
+
+            const top = results[0];
+            const loc = top?.geometry?.location;
+            if (!loc) return resolve({ key: item.key, notFound: true });
+
+            resolve({
+              key: item.key,
+              place: {
+                name: top.name || item.label,
+                lat: typeof loc.lat === 'function' ? loc.lat() : loc.lat,
+                lng: typeof loc.lng === 'function' ? loc.lng() : loc.lng
+              }
+            });
+          }
+        );
+      });
+    };
+
+    (async () => {
+      for (const item of queue) {
+        if (cancelled) break;
+        const res = await resolveOne(item);
+        if (!res) continue;
+
+        setPlaceCache((prev) => {
+          if (prev?.[res.key]) return prev;
+          if (res.notFound) return { ...prev, [res.key]: { notFound: true } };
+          return { ...prev, [res.key]: res.place };
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mapLoaded, planByDate, dateToTag, placeCache]);
+
   const reiseDaten = useMemo(() => {
     const NAVARTE = {
       name: 'Navarte, Mexico City',
@@ -607,10 +771,21 @@ function App() {
       dayPlan.sections.forEach((section) => {
         if (!section?.startTime) return;
         (section.items || []).forEach((line) => {
-          const place = findKnownPlaceInLine(line);
-          if (!place) return;
+          const known = findKnownPlaceInLine(line);
+          const cand = extractPlaceCandidate(line);
 
-          const key = place.name.toLowerCase();
+          let place = known;
+          if (!place && cand && placeCache?.[cand.key] && !placeCache[cand.key].notFound) {
+            place = {
+              name: placeCache[cand.key].name || cand.label,
+              lat: placeCache[cand.key].lat,
+              lng: placeCache[cand.key].lng
+            };
+          }
+
+          if (!place) return;
+          const key = String(place.name || '').toLowerCase();
+          if (!key) return;
           if (alreadyHas.has(key)) return;
 
           alreadyHas.add(key);
@@ -656,7 +831,7 @@ function App() {
       }
       return injectSubpointPlaces(day);
     });
-  }, [planByDate]);
+  }, [planByDate, placeCache]);
 
   // Google Maps laden
   useEffect(() => {
@@ -1126,18 +1301,24 @@ function App() {
                         </div>
                       </div>
 
-                      {planByDate[tag.datum]?.byStartTime?.[String(ort.zeit).trim()]?.items?.length > 0 && (
+                      {(() => {
+                        const timeKey = String(ort.zeit).trim();
+                        const section = planByDate[tag.datum]?.byStartTime?.[timeKey];
+                        const isFirstForTime = idx === tag.orte.findIndex((o) => String(o?.zeit).trim() === timeKey);
+                        if (!isFirstForTime || !section?.items?.length) return null;
+                        return (
                         <div className="ort-subpoints">
                           <div className="ort-subpoints-title">
-                            {planByDate[tag.datum].byStartTime[String(ort.zeit).trim()].label}
+                            {section.label}
                           </div>
                           <div className="ort-subpoints-list">
-                            {planByDate[tag.datum].byStartTime[String(ort.zeit).trim()].items.map((line, spIdx) => (
+                            {section.items.map((line, spIdx) => (
                               <div key={spIdx} className="ort-subpoint">{line}</div>
                             ))}
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
                     </React.Fragment>
                   ))}
                 </div>

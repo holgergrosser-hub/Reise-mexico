@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import './App.css';
 import reiseplanData from './reiseplan-text.json';
 import CloudAPI from './cloudAPI';
@@ -222,8 +222,30 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const planSubpointsByDate = useMemo(() => {
+    const byDate = {};
+    let currentDate = null;
+
+    (editedDocument || []).forEach((para) => {
+      const line = String(para ?? '').trim();
+      if (!line) return;
+
+      const dateMatch = line.match(/^(\d{2}\.\d{2})/);
+      if (dateMatch) {
+        currentDate = dateMatch[1];
+        if (!byDate[currentDate]) byDate[currentDate] = [];
+        return;
+      }
+
+      if (!currentDate) return;
+      byDate[currentDate].push(line);
+    });
+
+    return byDate;
+  }, [editedDocument]);
+
   // Reisedaten mit allen Orten und Fahrzeiten
-  const reiseDaten = [
+  const reiseDatenRaw = [
     {
       tag: 0,
       datum: "08.04",
@@ -447,6 +469,56 @@ function App() {
       hinweis: "ABREISETAG"
     }
   ];
+
+  const reiseDaten = useMemo(() => {
+    const NAVARTE = {
+      name: 'Navarte, Mexico City',
+      lat: 19.3987,
+      lng: -99.1547
+    };
+
+    const ensureNavarte = (orte) => {
+      const list = Array.isArray(orte) ? [...orte] : [];
+
+      const hasStart = list.some((o) => String(o?.name || '').toLowerCase().includes('navarte') && String(o?.name || '').toLowerCase().includes('start'));
+      const hasReturn = list.some((o) => String(o?.name || '').toLowerCase().includes('navarte') && (String(o?.name || '').toLowerCase().includes('rückkehr') || String(o?.name || '').toLowerCase().includes('rueckkehr')));
+
+      if (!hasStart) {
+        list.unshift({
+          name: 'Navarte (Start)',
+          lat: NAVARTE.lat,
+          lng: NAVARTE.lng,
+          zeit: 'Start',
+          dauer: 'Start',
+          typ: 'base'
+        });
+      }
+
+      if (!hasReturn) {
+        list.push({
+          name: 'Navarte (Rückkehr)',
+          lat: NAVARTE.lat,
+          lng: NAVARTE.lng,
+          zeit: 'Ende',
+          dauer: 'Ende',
+          typ: 'base'
+        });
+      }
+
+      return list;
+    };
+
+    return (reiseDatenRaw || []).map((day) => {
+      // "Jeden Tag in Mexico" -> die Mexico City Phase (Tag 0-12)
+      if (typeof day?.tag === 'number' && day.tag >= 0 && day.tag <= 12) {
+        return {
+          ...day,
+          orte: ensureNavarte(day.orte)
+        };
+      }
+      return day;
+    });
+  }, []);
 
   // Google Maps laden
   useEffect(() => {
@@ -874,6 +946,19 @@ function App() {
                 )}
 
                 <div className="beschreibung">{tag.beschreibung}</div>
+
+                {planSubpointsByDate[tag.datum]?.length > 0 && (
+                  <div className="plan-subpoints">
+                    <div className="plan-subpoints-title">📌 Unterpunkte</div>
+                    <div className="plan-subpoints-list">
+                      {planSubpointsByDate[tag.datum].map((line, idx) => (
+                        <div key={idx} className="plan-subpoint">
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {notes[tag.tag] && (
                   <div className="note-preview">

@@ -454,6 +454,32 @@ body {
   line-height: 1.5;
 }
 
+.plan-subpoints {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  border-left: 3px solid #06D6A0;
+}
+
+.plan-subpoints-title {
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.plan-subpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-subpoint {
+  color: #555;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .orte-liste {
   margin-top: 12px;
   display: flex;

@@ -31,18 +31,16 @@ function App() {
   // Initialer Sync beim Start
   useEffect(() => {
     const initSync = async () => {
+      // Immer erst lokales Backup laden, damit nichts "verschwindet",
+      // falls Cloud-Sync (temporär) fehlschlägt.
+      loadLocalData();
+
       if (syncMode === 'cloud') {
         const online = await cloudAPI.checkConnection();
         setIsOnline(online);
-        
-        if (online) {
-          await syncFromCloud();
-        } else {
-          // Fallback auf lokale Daten
-          loadLocalData();
-        }
+        if (online) await syncFromCloud();
       } else {
-        loadLocalData();
+        // local-only: bereits geladen
       }
     };
     

@@ -11,6 +11,20 @@ function isConfiguredAppsScriptUrl(url) {
   return Boolean(url) && !url.includes('IHRE_DEPLOYMENT_ID');
 }
 
+async function safeReadJson(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      status: 'error',
+      message: 'Antwort ist kein JSON (prüfe Apps-Script Deployment/URL/Zugriff)',
+      httpStatus: response.status,
+      preview: text.slice(0, 200)
+    };
+  }
+}
+
 class CloudAPI {
   constructor() {
     this.url = APPS_SCRIPT_URL;
@@ -60,7 +74,7 @@ class CloudAPI {
         body
       });
 
-      const data = await response.json();
+      const data = await safeReadJson(response);
       console.log('Notiz gespeichert:', data);
       return data;
     } catch (error) {
@@ -76,7 +90,7 @@ class CloudAPI {
         return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
       }
       const response = await fetch(`${this.url}?action=getNotes`);
-      const data = await response.json();
+      const data = await safeReadJson(response);
       console.log('Notizen abgerufen:', data);
       return data;
     } catch (error) {
@@ -102,7 +116,7 @@ class CloudAPI {
         body
       });
 
-      const data = await response.json();
+      const data = await safeReadJson(response);
       console.log('Notiz gelöscht:', data);
       return data;
     } catch (error) {
@@ -131,7 +145,7 @@ class CloudAPI {
         body
       });
 
-      const data = await response.json();
+      const data = await safeReadJson(response);
       console.log('Dokument gespeichert:', data);
       return data;
     } catch (error) {
@@ -147,7 +161,7 @@ class CloudAPI {
         return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
       }
       const response = await fetch(`${this.url}?action=getDocument`);
-      const data = await response.json();
+      const data = await safeReadJson(response);
       console.log('Dokument abgerufen:', data);
       return data;
     } catch (error) {
@@ -163,7 +177,7 @@ class CloudAPI {
         return { status: 'error', message: 'Cloud-Sync nicht konfiguriert (VITE_APPS_SCRIPT_URL fehlt)' };
       }
       const response = await fetch(`${this.url}?action=getAll`);
-      const data = await response.json();
+      const data = await safeReadJson(response);
       console.log('Alle Daten synchronisiert:', data);
       return data;
     } catch (error) {
@@ -183,7 +197,11 @@ class CloudAPI {
       }
 
       const response = await fetch(`${this.url}?action=getAll`, options);
-      return response.ok;
+      if (!response.ok) return false;
+
+      // Stelle sicher, dass wir wirklich JSON bekommen (nicht Login/HTML).
+      const data = await safeReadJson(response);
+      return data?.status === 'success';
     } catch (error) {
       console.error('Verbindung fehlgeschlagen:', error);
       return false;

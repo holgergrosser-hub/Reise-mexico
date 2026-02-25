@@ -186,6 +186,26 @@ Hauptfarben in `src/App.css`:
 ### Karte lädt nicht
 → Prüfen Sie Browser Console (F12) auf API Key Fehler
 
+### Places-Fotos funktionieren nicht (`ApiTargetBlockedMapError` / `REQUEST_DENIED`)
+
+Wenn in der Browser-Console z.B. `Places API error: ApiTargetBlockedMapError` oder im Popup `Places: REQUEST_DENIED` steht, blockiert der **API-Key** den Zugriff auf die **Places API**.
+
+Fix in Google Cloud Console:
+1. **Billing aktivieren**: Projekt muss ein aktives Billing-Konto haben.
+2. **APIs aktivieren**: `APIs & Services` → `Enabled APIs` → mindestens
+	 - **Maps JavaScript API**
+	 - **Places API** (ggf. zusätzlich **Places API (New)**)
+3. **API-Key Restrictions prüfen**: `APIs & Services` → `Credentials` → API Key
+	 - Application restrictions: `HTTP referrers (web sites)`
+		 - `https://<deine-netlify-site>.netlify.app/*`
+		 - ggf. Custom Domain: `https://<deine-domain>/*`
+		 - optional lokal: `http://localhost:5173/*`
+	 - API restrictions:
+		 - entweder testweise kurz `Don't restrict key` (nur zum Debug)
+		 - oder erlauben: **Maps JavaScript API** + **Places API**
+
+Hinweis: Ein API-Key ist im Browser immer sichtbar (Client-side). Nutze deshalb immer Referrer-Restriktionen und rotiere den Key, falls er versehentlich geteilt wurde.
+
 ## 📄 Lizenz
 
 Privates Projekt für persönliche Reiseplanung.

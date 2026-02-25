@@ -755,6 +755,14 @@ function App() {
     loadWeather();
   }, []);
 
+  const getOrtStyleClass = (ort) => {
+    const name = String(ort?.name || '').toLowerCase();
+    if (!name.includes('navarte')) return '';
+    if (name.includes('start')) return 'navarte-start';
+    if (name.includes('rückkehr') || name.includes('rueckkehr')) return 'navarte-return';
+    return 'navarte';
+  };
+
   return (
     <div className="app">
       <header className="header">
@@ -968,7 +976,7 @@ function App() {
 
                 <div className="orte-liste">
                   {tag.orte.map((ort, idx) => (
-                    <div key={idx} className="ort-item">
+                    <div key={idx} className={`ort-item ${getOrtStyleClass(ort)}`}>
                       <div className="ort-header">
                         <span className="ort-zeit">🕐 {ort.zeit}</span>
                         <strong>{ort.name}</strong>
@@ -1005,7 +1013,7 @@ function App() {
 
               <div className="timeline-orte">
                 {tag.orte.map((ort, idx) => (
-                  <div key={idx} className="timeline-ort">
+                  <div key={idx} className={`timeline-ort ${getOrtStyleClass(ort)}`}>
                     <div className="ort-time">{ort.zeit}</div>
                     <div className="ort-connector"></div>
                     <div className="ort-content">

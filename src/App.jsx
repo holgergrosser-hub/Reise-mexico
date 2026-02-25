@@ -1000,7 +1000,7 @@ function App() {
     const getPlacesPhoto = (queryText, biasLocation) => {
       const q = String(queryText ?? '').trim();
       if (!q) {
-        return Promise.resolve({ ok: false, status: 'NO_QUERY', url: null, attributionHtml: '', fromCache: false });
+        return Promise.resolve({ ok: false, status: 'NO_QUERY', urls: [], attributionHtml: '', fromCache: false });
       }
 
       const locKey = (biasLocation?.lat != null && biasLocation?.lng != null)
@@ -1016,10 +1016,14 @@ function App() {
         const transientOrDenied = cachedStatus === 'REQUEST_DENIED' || cachedStatus === 'TIMEOUT' || cachedStatus === 'EXCEPTION';
         if (!transientOrDenied) {
           if (cached.notFound) {
-            return Promise.resolve({ ok: false, status: cached.status || 'CACHED_NOT_FOUND', url: null, attributionHtml: '', fromCache: true });
+            return Promise.resolve({ ok: false, status: cached.status || 'CACHED_NOT_FOUND', urls: [], attributionHtml: '', fromCache: true });
           }
-          if (cached.url) {
-            return Promise.resolve({ ok: true, status: cached.status || 'OK', url: cached.url, attributionHtml: cached.attributionHtml || '', fromCache: true });
+          // Backward compatible: früher gab es nur "url" statt "urls"
+          const cachedUrls = Array.isArray(cached.urls)
+            ? cached.urls
+            : (cached.url ? [cached.url] : []);
+          if (cachedUrls.length > 0) {
+            return Promise.resolve({ ok: true, status: cached.status || 'OK', urls: cachedUrls, attributionHtml: cached.attributionHtml || '', fromCache: true });
           }
         }
       }
@@ -1029,7 +1033,7 @@ function App() {
         const timeoutId = setTimeout(() => {
           if (didFinish) return;
           didFinish = true;
-          resolve({ ok: false, status: 'TIMEOUT', url: null, attributionHtml: '', fromCache: false });
+          resolve({ ok: false, status: 'TIMEOUT', urls: [], attributionHtml: '', fromCache: false });
         }, 9000);
 
         try {
@@ -1058,41 +1062,48 @@ function App() {
                 const next = { ...cache, [cacheKey]: { notFound: true, status: statusText } };
                 writePhotoCache(next);
               }
-              resolve({ ok: false, status: statusText, url: null, attributionHtml: '', fromCache: false });
+              resolve({ ok: false, status: statusText, urls: [], attributionHtml: '', fromCache: false });
               return;
             }
 
             const place = results[0];
-            const photo = place?.photos?.[0];
-            if (!photo) {
+            const photos = Array.isArray(place?.photos) ? place.photos.slice(0, 3) : [];
+            if (photos.length === 0) {
               const next = { ...cache, [cacheKey]: { notFound: true, status: 'NO_PHOTO' } };
               writePhotoCache(next);
-              resolve({ ok: false, status: 'NO_PHOTO', url: null, attributionHtml: '', fromCache: false });
+              resolve({ ok: false, status: 'NO_PHOTO', urls: [], attributionHtml: '', fromCache: false });
               return;
             }
 
-            const url = photo.getUrl({ maxWidth: 700, maxHeight: 440 });
-            const attributionHtml = Array.isArray(photo.html_attributions)
-              ? photo.html_attributions.join(' ')
+            const urls = photos
+              .map((p) => p?.getUrl?.({ maxWidth: 700, maxHeight: 440 }))
+              .filter(Boolean);
+
+            const attributionParts = photos
+              .flatMap((p) => Array.isArray(p?.html_attributions) ? p.html_attributions : [])
+              .filter(Boolean);
+
+            const attributionHtml = attributionParts.length > 0
+              ? Array.from(new Set(attributionParts)).join(' ')
               : '';
 
-            const payload = { url, attributionHtml };
+            const payload = { urls, attributionHtml };
             const next = { ...cache, [cacheKey]: { ...payload, status: 'OK' } };
             writePhotoCache(next);
-            resolve({ ok: true, status: 'OK', url, attributionHtml, fromCache: false });
+            resolve({ ok: true, status: 'OK', urls, attributionHtml, fromCache: false });
           });
         } catch (err) {
           console.warn('Places photo lookup failed:', err);
           if (didFinish) return;
           didFinish = true;
           clearTimeout(timeoutId);
-          resolve({ ok: false, status: 'EXCEPTION', url: null, attributionHtml: '', fromCache: false });
+          resolve({ ok: false, status: 'EXCEPTION', urls: [], attributionHtml: '', fromCache: false });
         }
       });
     };
 
-    const buildInfoContent = ({ ort, tag, markerColor, photoUrl, photoAttributionHtml, placesStatusText }) => {
-      const safePhotoUrl = photoUrl || NOT_FOUND_SVG;
+    const buildInfoContent = ({ ort, tag, markerColor, photoUrls, photoAttributionHtml, placesStatusText }) => {
+      const urls = Array.isArray(photoUrls) && photoUrls.length > 0 ? photoUrls : [NOT_FOUND_SVG];
       const attributionBlock = photoAttributionHtml
         ? `<div style="margin-top: 6px; font-size: 11px; color: #666;">${photoAttributionHtml}</div>`
         : '';
@@ -1101,13 +1112,28 @@ function App() {
         ? `<div style="margin-top: 6px; font-size: 11px; color: #6b7280;">Places: ${placesStatusText}</div>`
         : '';
 
+      const photosBlock = urls.length <= 1
+        ? `
+            <img src="${urls[0]}" 
+                 style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
+                 alt="${ort.name}"
+                 loading="lazy">
+          `
+        : `
+            <div style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;">
+              ${urls.map((u, i) => `
+                <img src="${u}" 
+                     style="height: 150px; width: 240px; object-fit: cover; border-radius: 8px; flex: 0 0 auto;"
+                     alt="${ort.name} ${i + 1}"
+                     loading="lazy">
+              `).join('')}
+            </div>
+          `;
+
       return `
         <div style="padding: 10px; min-width: 250px; max-width: 350px;">
           <div style="margin-bottom: 10px;">
-            <img src="${safePhotoUrl}" 
-                 style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
-                 alt="${ort.name}"
-                loading="lazy">
+            ${photosBlock}
             ${attributionBlock}
               ${placesBlock}
           </div>
@@ -1165,7 +1191,7 @@ function App() {
         });
 
         // Sofort ein Placeholder-Bild anzeigen; echtes Foto wird lazy nachgeladen.
-        const initialImageUrl = PLACEHOLDER_SVG;
+        const initialImageUrls = [PLACEHOLDER_SVG];
 
         // Entfernungslinie zum vorherigen Ort zeichnen
         if (ortIndex > 0) {
@@ -1199,7 +1225,7 @@ function App() {
             ort,
             tag,
             markerColor,
-            photoUrl: initialImageUrl,
+            photoUrls: initialImageUrls,
             photoAttributionHtml: ''
           })
         });
@@ -1213,7 +1239,7 @@ function App() {
             ort,
             tag,
             markerColor,
-            photoUrl: initialImageUrl,
+            photoUrls: initialImageUrls,
             photoAttributionHtml: '',
             placesStatusText: 'LOADING'
           }));
@@ -1222,12 +1248,12 @@ function App() {
           getPlacesPhoto(ort.name, { lat: ort.lat, lng: ort.lng }).then((photo) => {
             const statusText = `${photo?.status || 'UNKNOWN'}${photo?.fromCache ? ' (cache)' : ''}`;
 
-            if (!photo?.ok || !photo?.url) {
+            if (!photo?.ok || !Array.isArray(photo?.urls) || photo.urls.length === 0) {
               infoWindow.setContent(buildInfoContent({
                 ort,
                 tag,
                 markerColor,
-                photoUrl: NOT_FOUND_SVG,
+                photoUrls: [NOT_FOUND_SVG],
                 photoAttributionHtml: '',
                 placesStatusText: statusText
               }));
@@ -1238,7 +1264,7 @@ function App() {
               ort,
               tag,
               markerColor,
-              photoUrl: photo.url,
+              photoUrls: photo.urls,
               photoAttributionHtml: photo.attributionHtml,
               placesStatusText: statusText
             }));

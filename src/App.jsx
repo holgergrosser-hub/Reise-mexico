@@ -998,17 +998,30 @@ function App() {
 
     const getPlacesPhoto = (queryText, biasLocation) => {
       const q = String(queryText ?? '').trim();
-      if (!q) return Promise.resolve(null);
+      if (!q) {
+        return Promise.resolve({ ok: false, status: 'NO_QUERY', url: null, attributionHtml: '', fromCache: false });
+      }
 
       const cacheKey = normalizeKey(q);
       const cache = readPhotoCache();
       const cached = cache?.[cacheKey];
       if (cached) {
-        if (cached.notFound) return Promise.resolve(null);
-        if (cached.url) return Promise.resolve(cached);
+        if (cached.notFound) {
+          return Promise.resolve({ ok: false, status: cached.status || 'CACHED_NOT_FOUND', url: null, attributionHtml: '', fromCache: true });
+        }
+        if (cached.url) {
+          return Promise.resolve({ ok: true, status: cached.status || 'OK', url: cached.url, attributionHtml: cached.attributionHtml || '', fromCache: true });
+        }
       }
 
       return new Promise((resolve) => {
+        let didFinish = false;
+        const timeoutId = setTimeout(() => {
+          if (didFinish) return;
+          didFinish = true;
+          resolve({ ok: false, status: 'TIMEOUT', url: null, attributionHtml: '', fromCache: false });
+        }, 3500);
+
         try {
           const request = {
             query: q,
@@ -1021,19 +1034,26 @@ function App() {
           }
 
           placesService.textSearch(request, (results, status) => {
-            if (status !== window.google.maps.places.PlacesServiceStatus.OK || !results?.length) {
-              const next = { ...cache, [cacheKey]: { notFound: true } };
+            if (didFinish) return;
+            didFinish = true;
+            clearTimeout(timeoutId);
+
+            const statusText = String(status || 'UNKNOWN');
+            const ok = status === window.google.maps.places.PlacesServiceStatus.OK;
+
+            if (!ok || !results?.length) {
+              const next = { ...cache, [cacheKey]: { notFound: true, status: statusText } };
               writePhotoCache(next);
-              resolve(null);
+              resolve({ ok: false, status: statusText, url: null, attributionHtml: '', fromCache: false });
               return;
             }
 
             const place = results[0];
             const photo = place?.photos?.[0];
             if (!photo) {
-              const next = { ...cache, [cacheKey]: { notFound: true } };
+              const next = { ...cache, [cacheKey]: { notFound: true, status: 'NO_PHOTO' } };
               writePhotoCache(next);
-              resolve(null);
+              resolve({ ok: false, status: 'NO_PHOTO', url: null, attributionHtml: '', fromCache: false });
               return;
             }
 
@@ -1043,21 +1063,28 @@ function App() {
               : '';
 
             const payload = { url, attributionHtml };
-            const next = { ...cache, [cacheKey]: payload };
+            const next = { ...cache, [cacheKey]: { ...payload, status: 'OK' } };
             writePhotoCache(next);
-            resolve(payload);
+            resolve({ ok: true, status: 'OK', url, attributionHtml, fromCache: false });
           });
         } catch (err) {
           console.warn('Places photo lookup failed:', err);
-          resolve(null);
+          if (didFinish) return;
+          didFinish = true;
+          clearTimeout(timeoutId);
+          resolve({ ok: false, status: 'EXCEPTION', url: null, attributionHtml: '', fromCache: false });
         }
       });
     };
 
-    const buildInfoContent = ({ ort, tag, markerColor, photoUrl, photoAttributionHtml }) => {
+    const buildInfoContent = ({ ort, tag, markerColor, photoUrl, photoAttributionHtml, placesStatusText }) => {
       const safePhotoUrl = photoUrl || NOT_FOUND_SVG;
       const attributionBlock = photoAttributionHtml
         ? `<div style="margin-top: 6px; font-size: 11px; color: #666;">${photoAttributionHtml}</div>`
+        : '';
+
+      const placesBlock = placesStatusText
+        ? `<div style="margin-top: 6px; font-size: 11px; color: #6b7280;">Places: ${placesStatusText}</div>`
         : '';
 
       return `
@@ -1068,6 +1095,7 @@ function App() {
                  alt="${ort.name}"
                 loading="lazy">
             ${attributionBlock}
+              ${placesBlock}
           </div>
           <h3 style="margin: 0 0 8px 0; color: ${markerColor}; font-size: 16px;">
             ${ort.typ === 'base' ? '🏠' : '🕐'} ${ort.zeit} - ${ort.name}
@@ -1166,15 +1194,28 @@ function App() {
           infoWindows.forEach(iw => iw.close());
           infoWindow.open(map, marker);
 
+          // Sofort Status anzeigen, damit klar ist, dass Places wirklich läuft
+          infoWindow.setContent(buildInfoContent({
+            ort,
+            tag,
+            markerColor,
+            photoUrl: initialImageUrl,
+            photoAttributionHtml: '',
+            placesStatusText: 'LOADING'
+          }));
+
           // Lazy: Foto erst beim Klick suchen (Quota/Performance)
           getPlacesPhoto(ort.name, { lat: ort.lat, lng: ort.lng }).then((photo) => {
-            if (!photo?.url) {
+            const statusText = `${photo?.status || 'UNKNOWN'}${photo?.fromCache ? ' (cache)' : ''}`;
+
+            if (!photo?.ok || !photo?.url) {
               infoWindow.setContent(buildInfoContent({
                 ort,
                 tag,
                 markerColor,
                 photoUrl: NOT_FOUND_SVG,
-                photoAttributionHtml: ''
+                photoAttributionHtml: '',
+                placesStatusText: statusText
               }));
               return;
             }
@@ -1184,7 +1225,8 @@ function App() {
               tag,
               markerColor,
               photoUrl: photo.url,
-              photoAttributionHtml: photo.attributionHtml
+              photoAttributionHtml: photo.attributionHtml,
+              placesStatusText: statusText
             }));
           });
         });

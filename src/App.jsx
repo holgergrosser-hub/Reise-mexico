@@ -1010,11 +1010,17 @@ function App() {
       const cache = readPhotoCache();
       const cached = cache?.[cacheKey];
       if (cached) {
-        if (cached.notFound) {
-          return Promise.resolve({ ok: false, status: cached.status || 'CACHED_NOT_FOUND', url: null, attributionHtml: '', fromCache: true });
-        }
-        if (cached.url) {
-          return Promise.resolve({ ok: true, status: cached.status || 'OK', url: cached.url, attributionHtml: cached.attributionHtml || '', fromCache: true });
+        // Wichtig: Permission-/Netzwerkfehler NICHT aus Cache zurückgeben,
+        // sonst bleibt es auch nach Fix (API-Key/Billing/Referrer) "kaputt".
+        const cachedStatus = String(cached.status || '').toUpperCase();
+        const transientOrDenied = cachedStatus === 'REQUEST_DENIED' || cachedStatus === 'TIMEOUT' || cachedStatus === 'EXCEPTION';
+        if (!transientOrDenied) {
+          if (cached.notFound) {
+            return Promise.resolve({ ok: false, status: cached.status || 'CACHED_NOT_FOUND', url: null, attributionHtml: '', fromCache: true });
+          }
+          if (cached.url) {
+            return Promise.resolve({ ok: true, status: cached.status || 'OK', url: cached.url, attributionHtml: cached.attributionHtml || '', fromCache: true });
+          }
         }
       }
 
@@ -1024,7 +1030,7 @@ function App() {
           if (didFinish) return;
           didFinish = true;
           resolve({ ok: false, status: 'TIMEOUT', url: null, attributionHtml: '', fromCache: false });
-        }, 3500);
+        }, 9000);
 
         try {
           const request = {
@@ -1046,8 +1052,12 @@ function App() {
             const ok = status === window.google.maps.places.PlacesServiceStatus.OK;
 
             if (!ok || !results?.length) {
-              const next = { ...cache, [cacheKey]: { notFound: true, status: statusText } };
-              writePhotoCache(next);
+              // Nur "echte" Nicht-Treffer cachen, nicht Permission/Netzwerk.
+              const upper = statusText.toUpperCase();
+              if (upper !== 'REQUEST_DENIED') {
+                const next = { ...cache, [cacheKey]: { notFound: true, status: statusText } };
+                writePhotoCache(next);
+              }
               resolve({ ok: false, status: statusText, url: null, attributionHtml: '', fromCache: false });
               return;
             }

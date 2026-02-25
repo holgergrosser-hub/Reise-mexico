@@ -152,6 +152,13 @@ Projekt nutzt Standard ESLint Config von Vite/React
 
 ## 📝 Anpassungen
 
+### Bilder (Fotos) hinzufügen
+
+- Bilder als Dateien ablegen: `public/bilder/…` (z.B. `public/bilder/roma-1.jpg`)
+- In der App werden sie über Pfade wie `/bilder/roma-1.jpg` geladen
+- Zuordnung erfolgt in `src/subpointImages.js` über einen normalisierten Key (klein, ohne Akzente)
+- Die Bilder werden im **Detaillierten Reiseplan** unter passenden Orten/Unterpunkten angezeigt
+
 ### Google Maps API Key
 Die App nutzt `VITE_GOOGLE_MAPS_API_KEY` (Environment Variable). Für Production:
 1. Erstellen Sie einen eigenen Key: https://console.cloud.google.com

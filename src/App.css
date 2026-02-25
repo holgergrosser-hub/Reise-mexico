@@ -769,6 +769,31 @@ body {
   line-height: 1.45;
 }
 
+.ort-subpoint-text {
+  display: block;
+}
+
+.image-strip {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.image-strip a {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.image-strip img {
+  height: 120px;
+  width: auto;
+  display: block;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
 .ort-content {
   background: white;
   padding: 12px;

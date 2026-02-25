@@ -90,6 +90,14 @@ Ihre Webseite enthält:
 
 ---
 
+## 🖼️ Bilder hinzufügen
+
+1. Bilder (JPG/PNG/WebP) in `public/bilder/` ablegen
+2. Zuordnung in `src/subpointImages.js` ergänzen (Key = normalisierter Ort/Unterpunkt)
+3. Deployen – die Bilder erscheinen im **Detaillierten Reiseplan** unter passenden Orten/Unterpunkten
+
+---
+
 ## 🔗 Nützliche Links
 
 - Netlify Dashboard: https://app.netlify.com

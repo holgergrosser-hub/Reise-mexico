@@ -3,6 +3,7 @@ import './App.css';
 import reiseplanData from './reiseplan-text.json';
 import CloudAPI from './cloudAPI';
 import WeatherAPI from './weatherAPI';
+import { SUBPOINT_IMAGES } from './subpointImages';
 
 function App() {
   const [selectedDay, setSelectedDay] = useState(null);
@@ -338,6 +339,43 @@ function App() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
+  };
+
+  const getImagePathsForText = (text) => {
+    const raw = String(text ?? '').trim();
+    if (!raw) return [];
+
+    const stripParens = (s) => String(s)
+      .replace(/\s*\([^)]*\)\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const candidates = [];
+    candidates.push(raw);
+    candidates.push(stripParens(raw));
+    candidates.push(stripParens(raw.replace(/^[•\-]\s+/, '')));
+    if (raw.includes(' - ')) candidates.push(stripParens(raw.split(' - ')[0]));
+    if (raw.includes(':')) candidates.push(stripParens(raw.split(':')[0]));
+
+    for (const cand of candidates) {
+      const key = normalizeKey(cand);
+      const hit = SUBPOINT_IMAGES?.[key];
+      if (Array.isArray(hit) && hit.length > 0) return hit;
+    }
+    return [];
+  };
+
+  const renderImageStrip = (paths, altBase) => {
+    if (!Array.isArray(paths) || paths.length === 0) return null;
+    return (
+      <div className="image-strip">
+        {paths.map((src, idx) => (
+          <a key={`${src}-${idx}`} href={src} target="_blank" rel="noreferrer">
+            <img src={src} alt={`${altBase} ${idx + 1}`} loading="lazy" />
+          </a>
+        ))}
+      </div>
+    );
   };
 
   const extractPlaceCandidate = (line) => {
@@ -1325,6 +1363,7 @@ function App() {
                           <span>⏱️ {ort.dauer}</span>
                           {ort.entfernung && <span className="entfernung">🚗 {ort.entfernung}</span>}
                         </div>
+                        {renderImageStrip(getImagePathsForText(ort.name), ort.name)}
                       </div>
 
                       {(() => {
@@ -1339,7 +1378,10 @@ function App() {
                           </div>
                           <div className="ort-subpoints-list">
                             {section.items.map((line, spIdx) => (
-                              <div key={spIdx} className="ort-subpoint">{line}</div>
+                              <div key={spIdx} className="ort-subpoint">
+                                <div className="ort-subpoint-text">{line}</div>
+                                {renderImageStrip(getImagePathsForText(line), line)}
+                              </div>
                             ))}
                           </div>
                         </div>

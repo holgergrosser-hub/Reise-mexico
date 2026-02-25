@@ -25,6 +25,8 @@ function App() {
   // Wetter States
   const [weatherAPI] = useState(() => new WeatherAPI());
   const [currentWeather, setCurrentWeather] = useState(null);
+  const [tulumWeather, setTulumWeather] = useState(null);
+  const [playaWeather, setPlayaWeather] = useState(null);
   const [weatherForecast, setWeatherForecast] = useState([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
 
@@ -664,9 +666,16 @@ function App() {
   useEffect(() => {
     const loadWeather = async () => {
       setWeatherLoading(true);
-      const current = await weatherAPI.getCurrentWeather('Mexico City');
-      const forecast = await weatherAPI.getForecast('Mexico City');
-      setCurrentWeather(current);
+      const [mexicoCurrent, tulumCurrent, playaCurrent, forecast] = await Promise.all([
+        weatherAPI.getCurrentWeather('Mexico City'),
+        weatherAPI.getCurrentWeather('Tulum'),
+        weatherAPI.getCurrentWeather('Playa del Carmen'),
+        weatherAPI.getForecast('Mexico City')
+      ]);
+
+      setCurrentWeather(mexicoCurrent);
+      setTulumWeather(tulumCurrent);
+      setPlayaWeather(playaCurrent);
       setWeatherForecast(forecast);
       setWeatherLoading(false);
     };
@@ -685,18 +694,53 @@ function App() {
           
           <div className="header-widgets">
             {/* Wetter Widget */}
-            {currentWeather && !weatherLoading && (
-              <div className="weather-widget" title="Aktuelles Wetter in Mexiko-Stadt">
-                <img 
-                  src={weatherAPI.getIconUrl(currentWeather.icon)} 
-                  alt="Wetter"
-                  style={{width: '50px', height: '50px'}}
-                />
-                <div className="weather-info">
-                  <div className="weather-temp">{currentWeather.temp}°C</div>
-                  <div className="weather-desc">{currentWeather.description}</div>
-                </div>
-              </div>
+            {!weatherLoading && (
+              <>
+                {currentWeather && (
+                  <div className="weather-widget" title="Aktuelles Wetter in Mexico City">
+                    <img 
+                      src={weatherAPI.getIconUrl(currentWeather.icon)} 
+                      alt="Wetter"
+                      style={{width: '50px', height: '50px'}}
+                    />
+                    <div className="weather-info">
+                      <div className="weather-city">Mexico City</div>
+                      <div className="weather-temp">{currentWeather.temp}°C</div>
+                      <div className="weather-desc">{currentWeather.description}</div>
+                    </div>
+                  </div>
+                )}
+
+                {tulumWeather && (
+                  <div className="weather-widget" title="Aktuelles Wetter in Tulum">
+                    <img 
+                      src={weatherAPI.getIconUrl(tulumWeather.icon)} 
+                      alt="Wetter"
+                      style={{width: '50px', height: '50px'}}
+                    />
+                    <div className="weather-info">
+                      <div className="weather-city">Tulum</div>
+                      <div className="weather-temp">{tulumWeather.temp}°C</div>
+                      <div className="weather-desc">{tulumWeather.description}</div>
+                    </div>
+                  </div>
+                )}
+
+                {playaWeather && (
+                  <div className="weather-widget" title="Aktuelles Wetter in Playa del Carmen">
+                    <img 
+                      src={weatherAPI.getIconUrl(playaWeather.icon)} 
+                      alt="Wetter"
+                      style={{width: '50px', height: '50px'}}
+                    />
+                    <div className="weather-info">
+                      <div className="weather-city">Playa del Carmen</div>
+                      <div className="weather-temp">{playaWeather.temp}°C</div>
+                      <div className="weather-desc">{playaWeather.description}</div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             
             {/* Sync Status */}
@@ -830,6 +874,12 @@ function App() {
                 )}
 
                 <div className="beschreibung">{tag.beschreibung}</div>
+
+                {notes[tag.tag] && (
+                  <div className="note-preview">
+                    📝 <em>{notes[tag.tag].substring(0, 160)}{notes[tag.tag].length > 160 ? '...' : ''}</em>
+                  </div>
+                )}
 
                 <div className="orte-liste">
                   {tag.orte.map((ort, idx) => (

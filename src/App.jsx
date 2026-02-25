@@ -3,6 +3,7 @@ import './App.css';
 import reiseplanData from './reiseplan-text.json';
 import CloudAPI from './cloudAPI';
 import WeatherAPI from './weatherAPI';
+import config from './config';
 
 function App() {
   const [selectedDay, setSelectedDay] = useState(null);
@@ -224,12 +225,16 @@ function App() {
       datum: "10.04",
       title: "Centro Histórico",
       orte: [
-        { name: "Zócalo", lat: 19.4324051, lng: -99.134078, zeit: "09:00", dauer: "2h", entfernung: "5 km / 12 Min von Roma" },
+        { name: "Navarte (Start)", lat: 19.3987, lng: -99.1547, zeit: "08:30", dauer: "Start", typ: "base" },
+        { name: "Zócalo", lat: 19.4324051, lng: -99.134078, zeit: "09:00", dauer: "2h", entfernung: "5 km / 12 Min" },
         { name: "Templo Mayor Museum", lat: 19.4346038, lng: -99.131881, zeit: "11:00", dauer: "2h", entfernung: "300m / 1 Min" },
         { name: "Torre Latinoamericana", lat: 19.4338974, lng: -99.1406461, zeit: "18:00", dauer: "2h", entfernung: "1 km / 4 Min" },
-        { name: "Plaza Garibaldi", lat: 19.440413, lng: -99.1392564, zeit: "20:00", dauer: "2h", entfernung: "800m / 3 Min" }
+        { name: "Plaza Garibaldi", lat: 19.440413, lng: -99.1392564, zeit: "20:00", dauer: "2h", entfernung: "800m / 3 Min" },
+        { name: "Navarte (Rückkehr)", lat: 19.3987, lng: -99.1547, zeit: "22:00", dauer: "Ende", entfernung: "5 km / 15 Min", typ: "base" }
       ],
-      beschreibung: "Fahnenzeremonie 8 Uhr, Kathedrale, Diego Rivera Murals, Mariachi-Musik"
+      beschreibung: "Fahnenzeremonie 8 Uhr, Kathedrale, Diego Rivera Murals, Mariachi-Musik",
+      gesamtEntfernung: "16 km",
+      gesamtFahrtzeit: "46 Min"
     },
     {
       tag: 3,
@@ -416,7 +421,8 @@ function App() {
   // Google Maps laden
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCKWHwO2NASXbuP2pF_mNWxFapWXC15W0Q&libraries=geometry,places`;
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBFw0Qbyq9zTFTd-tUY6dqqjZ1pGEFVjko';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,places`;
     script.async = true;
     script.defer = true;
     script.onload = () => setMapLoaded(true);
@@ -483,23 +489,9 @@ function App() {
           }
         });
 
-        // Google Places Service für echte Fotos
-        const placesService = new window.google.maps.places.PlacesService(map);
-        const request = {
-          query: ort.name + ', Mexico City',
-          fields: ['photos', 'formatted_address', 'name', 'rating', 'opening_hours']
-        };
-
-        // Bessere Bilder: Unsplash mit Mexiko-spezifischen Keywords
-        const searchTerm = ort.name.replace(/\s+/g, '+');
-        let imageUrl = `https://source.unsplash.com/400x250/?${searchTerm},mexico,landmark`;
-        
-        // Versuche echtes Foto von Google Places zu laden
-        placesService.findPlaceFromQuery(request, (results, status) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK && results[0]?.photos) {
-            imageUrl = results[0].photos[0].getUrl({ maxWidth: 400, maxHeight: 250 });
-          }
-        });
+        // EINFACHES BILD-SYSTEM: Unsplash (kein API Key nötig!)
+        const searchTerm = encodeURIComponent(ort.name + ' mexico');
+        const imageUrl = `https://source.unsplash.com/400x250/?${searchTerm}`;
 
         // Entfernungslinie zum vorherigen Ort zeichnen
         if (ortIndex > 0) {

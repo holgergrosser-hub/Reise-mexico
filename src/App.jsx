@@ -84,6 +84,62 @@ function App() {
     if (savedDoc) setEditedDocument(JSON.parse(savedDoc));
   };
 
+  const NOTE_FIELDS = ['freeText', 'tickets', 'treffpunkt', 'mitbringen', 'kosten', 'links'];
+  const makeEmptyNote = () => ({
+    freeText: '',
+    tickets: '',
+    treffpunkt: '',
+    mitbringen: '',
+    kosten: '',
+    links: ''
+  });
+
+  const coerceNoteObject = (value) => {
+    const empty = makeEmptyNote();
+
+    // Raw string: entweder JSON oder Freitext
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed && typeof parsed === 'object') {
+            const hasAnyField = NOTE_FIELDS.some((f) => Object.prototype.hasOwnProperty.call(parsed, f));
+            if (hasAnyField) {
+              const out = { ...empty };
+              NOTE_FIELDS.forEach((f) => {
+                if (parsed[f] != null) out[f] = String(parsed[f]);
+              });
+              return out;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      return { ...empty, freeText: value };
+    }
+
+    // Cloud shape: { text, user, timestamp }
+    if (value && typeof value === 'object') {
+      const textMaybe = value.text ?? value.note;
+      if (typeof textMaybe === 'string') return coerceNoteObject(textMaybe);
+
+      // Already structured object
+      const hasAnyField = NOTE_FIELDS.some((f) => Object.prototype.hasOwnProperty.call(value, f));
+      if (hasAnyField) {
+        const out = { ...empty };
+        NOTE_FIELDS.forEach((f) => {
+          if (value[f] != null) out[f] = String(value[f]);
+        });
+        return out;
+      }
+    }
+
+    return empty;
+  };
+
   const normalizeNotesForUI = (rawNotes) => {
     const normalized = {};
     if (!rawNotes || typeof rawNotes !== 'object') return normalized;
@@ -92,15 +148,7 @@ function App() {
       const keyString = String(rawKey);
       const numberMatch = keyString.match(/\d+/);
       const dayKey = numberMatch ? String(parseInt(numberMatch[0], 10)) : keyString;
-
-      let text = '';
-      if (typeof rawValue === 'string') {
-        text = rawValue;
-      } else if (rawValue && typeof rawValue === 'object') {
-        text = rawValue.text ?? rawValue.note ?? '';
-      }
-
-      normalized[dayKey] = String(text ?? '');
+      normalized[dayKey] = coerceNoteObject(rawValue);
     });
 
     return normalized;
@@ -169,25 +217,78 @@ function App() {
   };
 
   const updateNote = async (day, text) => {
+    const dayKey = String(day);
+    const nextNote = { ...makeEmptyNote(), ...(notes?.[dayKey] || {}), freeText: text };
+
     setNotes(prev => ({
       ...prev,
-      [day]: text
+      [dayKey]: nextNote
     }));
-    
-    // Cloud-Sync
+
     if (syncMode === 'cloud') {
-      const result = await cloudAPI.saveNote(day, text);
+      const payload = JSON.stringify(nextNote);
+      const result = await cloudAPI.saveNote(dayKey, payload);
       if (result?.status === 'success') setIsOnline(true);
       if (result?.status === 'error') setIsOnline(false);
     }
   };
 
+  const updateNoteField = async (day, field, value) => {
+    const dayKey = String(day);
+    if (!NOTE_FIELDS.includes(field)) return;
+
+    const nextNote = { ...makeEmptyNote(), ...(notes?.[dayKey] || {}), [field]: value };
+    setNotes(prev => ({
+      ...prev,
+      [dayKey]: nextNote
+    }));
+
+    if (syncMode === 'cloud') {
+      const payload = JSON.stringify(nextNote);
+      const result = await cloudAPI.saveNote(dayKey, payload);
+      if (result?.status === 'success') setIsOnline(true);
+      if (result?.status === 'error') setIsOnline(false);
+    }
+  };
+
+  const hasNoteContent = (noteObj) => {
+    if (!noteObj || typeof noteObj !== 'object') return false;
+    return NOTE_FIELDS.some((f) => String(noteObj?.[f] || '').trim().length > 0);
+  };
+
+  const notesCount = useMemo(() => {
+    return Object.values(notes || {}).filter(hasNoteContent).length;
+  }, [notes]);
+
+  const getNotePreviewText = (noteObj) => {
+    const n = coerceNoteObject(noteObj);
+    if (String(n.freeText || '').trim()) return n.freeText;
+    if (String(n.treffpunkt || '').trim()) return `Treffpunkt: ${n.treffpunkt}`;
+    if (String(n.tickets || '').trim()) return `Tickets: ${n.tickets}`;
+    if (String(n.links || '').trim()) return `Links: ${n.links}`;
+    if (String(n.mitbringen || '').trim()) return `Mitbringen: ${n.mitbringen}`;
+    if (String(n.kosten || '').trim()) return `Kosten: ${n.kosten}`;
+    return '';
+  };
+
   const exportNotes = () => {
-    const text = Object.entries(notes)
-      .map(([day, note]) => {
-        const tagData = reiseDaten.find(t => t.tag === parseInt(day));
-        return `Tag ${day} - ${tagData?.datum} - ${tagData?.title}\n${note}\n\n`;
+    const text = reiseDaten
+      .map((tag) => {
+        const dayKey = String(tag.tag);
+        const noteObj = coerceNoteObject(notes?.[dayKey]);
+        if (!hasNoteContent(noteObj)) return '';
+
+        const lines = [];
+        if (noteObj.tickets?.trim()) lines.push(`Tickets/Reservierung: ${noteObj.tickets.trim()}`);
+        if (noteObj.treffpunkt?.trim()) lines.push(`Treffpunkt: ${noteObj.treffpunkt.trim()}`);
+        if (noteObj.mitbringen?.trim()) lines.push(`Mitbringen: ${noteObj.mitbringen.trim()}`);
+        if (noteObj.kosten?.trim()) lines.push(`Kosten: ${noteObj.kosten.trim()}`);
+        if (noteObj.links?.trim()) lines.push(`Links: ${noteObj.links.trim()}`);
+        if (noteObj.freeText?.trim()) lines.push(`Notizen:\n${noteObj.freeText.trim()}`);
+
+        return `Tag ${tag.tag} - ${tag.datum} - ${tag.title}\n${lines.join('\n')}\n\n`;
       })
+      .filter(Boolean)
       .join('---\n\n');
     
     const blob = new Blob([text], { type: 'text/plain' });
@@ -198,6 +299,68 @@ function App() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const todayInfo = useMemo(() => {
+    const TRAVEL_YEAR = 2025;
+    if (!Array.isArray(reiseDaten) || reiseDaten.length === 0) return null;
+
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const todayKey = `${pad2(now.getDate())}.${pad2(now.getMonth() + 1)}`;
+
+    const parseDatum = (datum) => {
+      const match = String(datum || '').match(/^(\d{2})\.(\d{2})$/);
+      if (!match) return null;
+      const dd = parseInt(match[1], 10);
+      const mm = parseInt(match[2], 10);
+      return new Date(TRAVEL_YEAR, mm - 1, dd);
+    };
+
+    const schedule = reiseDaten
+      .map((t) => ({
+        tag: t,
+        dateObj: parseDatum(t?.datum)
+      }))
+      .filter((x) => x.dateObj instanceof Date && !Number.isNaN(x.dateObj.valueOf()))
+      .sort((a, b) => a.dateObj - b.dateObj);
+
+    const exact = reiseDaten.find((t) => t?.datum === todayKey) || null;
+    const nowInTravelYear = new Date(TRAVEL_YEAR, now.getMonth(), now.getDate());
+    const nextUpcoming = schedule.find((x) => x.dateObj >= nowInTravelYear)?.tag || schedule[0]?.tag || null;
+
+    const tag = exact || nextUpcoming;
+    if (!tag) return null;
+
+    const isToday = tag?.datum === todayKey;
+    const parseTimeToMinutes = (timeText) => {
+      const m = String(timeText || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return null;
+      const hh = parseInt(m[1], 10);
+      const mm = parseInt(m[2], 10);
+      return hh * 60 + mm;
+    };
+
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const orte = Array.isArray(tag?.orte) ? tag.orte : [];
+    let nextOrt = orte[0] || null;
+    if (isToday && orte.length > 0) {
+      nextOrt = orte.find((o) => {
+        const mins = parseTimeToMinutes(o?.zeit);
+        return mins != null && mins >= nowMinutes;
+      }) || orte[orte.length - 1];
+    }
+
+    const noteObj = coerceNoteObject(notes?.[String(tag.tag)]);
+    const meeting = String(noteObj?.treffpunkt || '').trim() || String(nextOrt?.name || '').trim();
+
+    return {
+      tag,
+      nextOrt,
+      meeting,
+      noteObj,
+      isToday
+    };
+  }, [reiseDaten, notes]);
 
   const updateDocumentParagraph = (index, text) => {
     setEditedDocument(prev => {
@@ -1494,6 +1657,57 @@ function App() {
             </div>
           </div>
         </div>
+
+        {todayInfo?.tag && (
+          <div className="today-block">
+            <div className="today-main">
+              <div className="today-title">📍 Heute</div>
+              <div className="today-subtitle">
+                Tag {todayInfo.tag.tag} • {todayInfo.tag.datum} • {todayInfo.tag.title}
+              </div>
+              {todayInfo.nextOrt && (
+                <div className="today-row">
+                  <strong>Nächster Programmpunkt:</strong> 🕐 {todayInfo.nextOrt.zeit} – {todayInfo.nextOrt.name}
+                </div>
+              )}
+              {todayInfo.meeting && (
+                <div className="today-row">
+                  <strong>Treffpunkt:</strong> {todayInfo.meeting}
+                </div>
+              )}
+              {(todayInfo.noteObj?.tickets || '').trim() && (
+                <div className="today-row">
+                  <strong>Tickets/Reservierung:</strong> {todayInfo.noteObj.tickets}
+                </div>
+              )}
+              {todayInfo.nextOrt?.entfernung && (
+                <div className="today-row">
+                  <strong>Fahrt:</strong> 🚗 {todayInfo.nextOrt.entfernung}
+                </div>
+              )}
+            </div>
+            <div className="today-actions">
+              <button
+                className="today-btn"
+                onClick={() => {
+                  setActiveTab('karte');
+                  setFilteredDay(todayInfo.tag.tag);
+                  setSelectedDay(todayInfo.tag.tag);
+                }}
+                title="Diesen Tag auf der Karte & im Plan zeigen"
+              >
+                🗺️ Zu Tag
+              </button>
+              <button
+                className="today-btn"
+                onClick={() => window.goToNotes(todayInfo.tag.tag)}
+                title="Notizen zu diesem Tag öffnen"
+              >
+                📝 Notizen
+              </button>
+            </div>
+          </div>
+        )}
         
         <div className="tabs">
           <button 
@@ -1512,7 +1726,7 @@ function App() {
             className={`tab ${activeTab === 'notizen' ? 'active' : ''}`}
             onClick={() => setActiveTab('notizen')}
           >
-            📝 Notizen {Object.keys(notes).length > 0 && `(${Object.keys(notes).length})`}
+            📝 Notizen {notesCount > 0 && `(${notesCount})`}
           </button>
           <button 
             className={`tab ${activeTab === 'dokument' ? 'active' : ''}`}
@@ -1607,9 +1821,14 @@ function App() {
                   </div>
                 )}
 
-                {notes[tag.tag] && (
+                {hasNoteContent(notes?.[String(tag.tag)]) && (
                   <div className="note-preview">
-                    📝 <em>{notes[tag.tag].substring(0, 160)}{notes[tag.tag].length > 160 ? '...' : ''}</em>
+                    {(() => {
+                      const preview = getNotePreviewText(notes?.[String(tag.tag)]);
+                      return preview
+                        ? <span>📝 <em>{preview.substring(0, 160)}{preview.length > 160 ? '...' : ''}</em></span>
+                        : null;
+                    })()}
                   </div>
                 )}
 
@@ -1691,9 +1910,14 @@ function App() {
                 ))}
               </div>
 
-              {notes[tag.tag] && (
+              {hasNoteContent(notes?.[String(tag.tag)]) && (
                 <div className="note-preview">
-                  📝 <em>{notes[tag.tag].substring(0, 100)}{notes[tag.tag].length > 100 ? '...' : ''}</em>
+                  {(() => {
+                    const preview = getNotePreviewText(notes?.[String(tag.tag)]);
+                    return preview
+                      ? <span>📝 <em>{preview.substring(0, 100)}{preview.length > 100 ? '...' : ''}</em></span>
+                      : null;
+                  })()}
                 </div>
               )}
             </div>
@@ -1718,13 +1942,69 @@ function App() {
                   <h4>{tag.title}</h4>
                 </div>
                 
-                <textarea
-                  className="notiz-textarea"
-                  placeholder="Hier können Sie Ihre Notizen, Ideen, Buchungen etc. eintragen..."
-                  value={notes[tag.tag] || ''}
-                  onChange={(e) => updateNote(tag.tag, e.target.value)}
-                  rows={4}
-                />
+                {(() => {
+                  const dayKey = String(tag.tag);
+                  const noteObj = coerceNoteObject(notes?.[dayKey]);
+                  return (
+                    <>
+                      <div className="note-fields">
+                        <label className="note-field">
+                          <span>Tickets/Reservierung</span>
+                          <input
+                            type="text"
+                            value={noteObj.tickets}
+                            onChange={(e) => updateNoteField(dayKey, 'tickets', e.target.value)}
+                            placeholder="z.B. Bestätigungscode, Uhrzeit, Name"
+                          />
+                        </label>
+                        <label className="note-field">
+                          <span>Treffpunkt</span>
+                          <input
+                            type="text"
+                            value={noteObj.treffpunkt}
+                            onChange={(e) => updateNoteField(dayKey, 'treffpunkt', e.target.value)}
+                            placeholder="z.B. Lobby / Eingang / Adresse"
+                          />
+                        </label>
+                        <label className="note-field">
+                          <span>Mitbringen</span>
+                          <input
+                            type="text"
+                            value={noteObj.mitbringen}
+                            onChange={(e) => updateNoteField(dayKey, 'mitbringen', e.target.value)}
+                            placeholder="z.B. Sonnencreme, Wasser, Pass"
+                          />
+                        </label>
+                        <label className="note-field">
+                          <span>Kosten</span>
+                          <input
+                            type="text"
+                            value={noteObj.kosten}
+                            onChange={(e) => updateNoteField(dayKey, 'kosten', e.target.value)}
+                            placeholder="z.B. Eintritt, Budget, Split"
+                          />
+                        </label>
+                        <label className="note-field note-field-wide">
+                          <span>Links</span>
+                          <input
+                            type="text"
+                            value={noteObj.links}
+                            onChange={(e) => updateNoteField(dayKey, 'links', e.target.value)}
+                            placeholder="z.B. Google Maps / Tickets / Website"
+                          />
+                        </label>
+                      </div>
+
+                      <textarea
+                        className="notiz-textarea"
+                        placeholder="Freie Notizen für den Tag…"
+                        value={noteObj.freeText || ''}
+                        onChange={(e) => updateNote(dayKey, e.target.value)}
+                        rows={4}
+                      />
+                    </>
+                  );
+                })()}
                 
                 <div className="notiz-orte">
                   {tag.orte.map((ort, idx) => (

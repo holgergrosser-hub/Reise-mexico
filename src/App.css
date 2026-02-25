@@ -46,6 +46,58 @@ body {
   flex-wrap: wrap;
 }
 
+/* Heute-Block (Teilnehmer-Quickview) */
+.today-block {
+  margin-top: 14px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 15px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.today-title {
+  font-weight: 800;
+  font-size: 1.05rem;
+  margin-bottom: 2px;
+}
+
+.today-subtitle {
+  opacity: 0.9;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.today-row {
+  font-size: 0.92rem;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
+.today-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.today-btn {
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.today-btn:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
 /* Wetter Widget */
 .weather-widget {
   display: flex;
@@ -924,6 +976,55 @@ body {
   font-family: inherit;
   resize: vertical;
   transition: all 0.3s ease;
+}
+
+/* Strukturierte Teilnehmer-Notizen */
+.note-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.note-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-field span {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: 700;
+}
+
+.note-field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+}
+
+.note-field input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.note-field-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 700px) {
+  .today-block {
+    flex-direction: column;
+  }
+  .note-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .notiz-textarea:focus {

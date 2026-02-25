@@ -969,7 +969,34 @@ function App() {
       }
     };
 
-    const getPlacesPhoto = (queryText) => {
+    const PLACEHOLDER_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="700" height="440" viewBox="0 0 700 440">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#667eea"/>
+            <stop offset="1" stop-color="#06D6A0"/>
+          </linearGradient>
+        </defs>
+        <rect width="700" height="440" fill="url(#g)"/>
+        <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="28" fill="rgba(255,255,255,0.95)">
+          Foto wird geladen…
+        </text>
+      </svg>`
+    )}`;
+
+    const NOT_FOUND_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="700" height="440" viewBox="0 0 700 440">
+        <rect width="700" height="440" fill="#f3f4f6"/>
+        <text x="50%" y="48%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="26" fill="#6b7280">
+          Kein Foto gefunden
+        </text>
+        <text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="14" fill="#9ca3af">
+          (Google Places Photos)
+        </text>
+      </svg>`
+    )}`;
+
+    const getPlacesPhoto = (queryText, biasLocation) => {
       const q = String(queryText ?? '').trim();
       if (!q) return Promise.resolve(null);
 
@@ -982,10 +1009,18 @@ function App() {
       }
 
       return new Promise((resolve) => {
-        // TextSearch ist robust für "Name"-Queries und liefert i.d.R. Photos direkt.
-        placesService.textSearch(
-          { query: `${q} Mexico` },
-          (results, status) => {
+        try {
+          const request = {
+            query: q,
+          };
+
+          // Bias: wenn wir Koordinaten haben, erhöht das die Trefferqualität.
+          if (biasLocation?.lat != null && biasLocation?.lng != null) {
+            request.location = new window.google.maps.LatLng(biasLocation.lat, biasLocation.lng);
+            request.radius = 5000;
+          }
+
+          placesService.textSearch(request, (results, status) => {
             if (status !== window.google.maps.places.PlacesServiceStatus.OK || !results?.length) {
               const next = { ...cache, [cacheKey]: { notFound: true } };
               writePhotoCache(next);
@@ -1011,13 +1046,16 @@ function App() {
             const next = { ...cache, [cacheKey]: payload };
             writePhotoCache(next);
             resolve(payload);
-          }
-        );
+          });
+        } catch (err) {
+          console.warn('Places photo lookup failed:', err);
+          resolve(null);
+        }
       });
     };
 
     const buildInfoContent = ({ ort, tag, markerColor, photoUrl, photoAttributionHtml }) => {
-      const safePhotoUrl = photoUrl || '';
+      const safePhotoUrl = photoUrl || NOT_FOUND_SVG;
       const attributionBlock = photoAttributionHtml
         ? `<div style="margin-top: 6px; font-size: 11px; color: #666;">${photoAttributionHtml}</div>`
         : '';
@@ -1028,7 +1066,7 @@ function App() {
             <img src="${safePhotoUrl}" 
                  style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;"
                  alt="${ort.name}"
-                 onerror="this.src='https://source.unsplash.com/400x250/?mexico+city,travel'">
+                loading="lazy">
             ${attributionBlock}
           </div>
           <h3 style="margin: 0 0 8px 0; color: ${markerColor}; font-size: 16px;">
@@ -1084,9 +1122,8 @@ function App() {
           }
         });
 
-        // Fallback-Bild (wenn Places kein Foto liefert)
-        const searchTerm = encodeURIComponent(ort.name + ' mexico');
-        const fallbackImageUrl = `https://source.unsplash.com/400x250/?${searchTerm}`;
+        // Sofort ein Placeholder-Bild anzeigen; echtes Foto wird lazy nachgeladen.
+        const initialImageUrl = PLACEHOLDER_SVG;
 
         // Entfernungslinie zum vorherigen Ort zeichnen
         if (ortIndex > 0) {
@@ -1120,7 +1157,7 @@ function App() {
             ort,
             tag,
             markerColor,
-            photoUrl: fallbackImageUrl,
+            photoUrl: initialImageUrl,
             photoAttributionHtml: ''
           })
         });
@@ -1130,8 +1167,18 @@ function App() {
           infoWindow.open(map, marker);
 
           // Lazy: Foto erst beim Klick suchen (Quota/Performance)
-          getPlacesPhoto(ort.name).then((photo) => {
-            if (!photo?.url) return;
+          getPlacesPhoto(ort.name, { lat: ort.lat, lng: ort.lng }).then((photo) => {
+            if (!photo?.url) {
+              infoWindow.setContent(buildInfoContent({
+                ort,
+                tag,
+                markerColor,
+                photoUrl: NOT_FOUND_SVG,
+                photoAttributionHtml: ''
+              }));
+              return;
+            }
+
             infoWindow.setContent(buildInfoContent({
               ort,
               tag,

@@ -1003,6 +1003,25 @@ function App() {
         return Promise.resolve({ ok: false, status: 'NO_QUERY', urls: [], attributionHtml: '', fromCache: false });
       }
 
+      const MAX_PHOTOS = 5;
+
+      const extractFromPhotos = (photos) => {
+        const list = Array.isArray(photos) ? photos.slice(0, MAX_PHOTOS) : [];
+        const urls = list
+          .map((p) => p?.getUrl?.({ maxWidth: 700, maxHeight: 440 }))
+          .filter(Boolean);
+
+        const attributionParts = list
+          .flatMap((p) => Array.isArray(p?.html_attributions) ? p.html_attributions : [])
+          .filter(Boolean);
+
+        const attributionHtml = attributionParts.length > 0
+          ? Array.from(new Set(attributionParts)).join(' ')
+          : '';
+
+        return { urls, attributionHtml };
+      };
+
       const locKey = (biasLocation?.lat != null && biasLocation?.lng != null)
         ? `@${Number(biasLocation.lat).toFixed(3)},${Number(biasLocation.lng).toFixed(3)}`
         : '';
@@ -1067,30 +1086,50 @@ function App() {
             }
 
             const place = results[0];
-            const photos = Array.isArray(place?.photos) ? place.photos.slice(0, 3) : [];
-            if (photos.length === 0) {
-              const next = { ...cache, [cacheKey]: { notFound: true, status: 'NO_PHOTO' } };
+
+            const finishWithPhotos = (photos, statusOverride) => {
+              const { urls, attributionHtml } = extractFromPhotos(photos);
+              if (!urls.length) {
+                const next = { ...cache, [cacheKey]: { notFound: true, status: statusOverride || 'NO_PHOTO' } };
+                writePhotoCache(next);
+                resolve({ ok: false, status: statusOverride || 'NO_PHOTO', urls: [], attributionHtml: '', fromCache: false });
+                return;
+              }
+
+              const payload = { urls, attributionHtml };
+              const next = { ...cache, [cacheKey]: { ...payload, status: 'OK' } };
               writePhotoCache(next);
-              resolve({ ok: false, status: 'NO_PHOTO', urls: [], attributionHtml: '', fromCache: false });
-              return;
+              resolve({ ok: true, status: 'OK', urls, attributionHtml, fromCache: false });
+            };
+
+            // TextSearch liefert oft nur ein Foto. Mit getDetails bekommen wir i.d.R. mehr.
+            const placeId = place?.place_id;
+            if (placeId) {
+              try {
+                placesService.getDetails(
+                  { placeId, fields: ['photos'] },
+                  (details, detailsStatus) => {
+                    const ds = String(detailsStatus || 'UNKNOWN');
+                    const okDetails = detailsStatus === window.google.maps.places.PlacesServiceStatus.OK;
+                    if (okDetails && details?.photos?.length) {
+                      finishWithPhotos(details.photos, null);
+                      return;
+                    }
+
+                    // Fallback: nutze Photos aus dem TextSearch-Ergebnis
+                    finishWithPhotos(place?.photos, `DETAILS_${ds}`);
+                  }
+                );
+                return;
+              } catch (e) {
+                console.warn('Places getDetails failed:', e);
+                finishWithPhotos(place?.photos, 'DETAILS_EXCEPTION');
+                return;
+              }
             }
 
-            const urls = photos
-              .map((p) => p?.getUrl?.({ maxWidth: 700, maxHeight: 440 }))
-              .filter(Boolean);
-
-            const attributionParts = photos
-              .flatMap((p) => Array.isArray(p?.html_attributions) ? p.html_attributions : [])
-              .filter(Boolean);
-
-            const attributionHtml = attributionParts.length > 0
-              ? Array.from(new Set(attributionParts)).join(' ')
-              : '';
-
-            const payload = { urls, attributionHtml };
-            const next = { ...cache, [cacheKey]: { ...payload, status: 'OK' } };
-            writePhotoCache(next);
-            resolve({ ok: true, status: 'OK', urls, attributionHtml, fromCache: false });
+            // Kein placeId: direkt aus TextSearch nutzen
+            finishWithPhotos(place?.photos, null);
           });
         } catch (err) {
           console.warn('Places photo lookup failed:', err);
@@ -1246,7 +1285,8 @@ function App() {
 
           // Lazy: Foto erst beim Klick suchen (Quota/Performance)
           getPlacesPhoto(ort.name, { lat: ort.lat, lng: ort.lng }).then((photo) => {
-            const statusText = `${photo?.status || 'UNKNOWN'}${photo?.fromCache ? ' (cache)' : ''}`;
+            const count = Array.isArray(photo?.urls) ? photo.urls.length : 0;
+            const statusText = `${photo?.status || 'UNKNOWN'}${photo?.fromCache ? ' (cache)' : ''}${count ? ` • ${count} Fotos` : ''}`;
 
             if (!photo?.ok || !Array.isArray(photo?.urls) || photo.urls.length === 0) {
               infoWindow.setContent(buildInfoContent({
